@@ -49,7 +49,8 @@ async def check_cmd(message):
     elif message.content.startswith("$RenaStare"):
         await message.channel.send(file=discord.File("content/post_this_rena.gif"))
     elif message.content.startswith("$Help"):
-        await message.channel.send("User commands:\n$Homoquote — get cringe homo quote\n$RenaStare — let Rena watch in your soul\n")
-
+        help_file = open('help.txt')
+        await message.channel.send("User commands:\n" + help_file.read())
+        help_file.close
 
 client.run(settings['token'])
