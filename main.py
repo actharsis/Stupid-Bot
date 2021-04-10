@@ -3,10 +3,8 @@ import discord
 from discord.ext import commands
 from config import settings
 from datetime import datetime
-from pixivapi import Client
 
 client = discord.Client()
-pixiv_client = Client()
 
 start_time = datetime.now()
 start_time.isoformat(sep='T')
@@ -52,9 +50,6 @@ async def check_cmd(message):
         await message.channel.send(file=discord.File("content/post_this_rena.gif"))
     elif message.content.startswith("$Help"):
         await message.channel.send("User commands:\n$Homoquote — get cringe homo quote\n$RenaStare — let Rena watch in your soul\n")
-    #elif message.content.startswith("$tvarb"):
-        #tvarb = await search_illustrations("furudo erika", search_target=<SearchTarget.TAGS_PARTIAL: 'partial_match_for_tags'>, sort=<Sort.DATE_DESC: 'date_desc'>, duration=None, offset=None)
-        #illust = random.choice(list(tvarb.values()))
-        #illust.download("/content", size=<Size.ORIGINAL: 'original'>, filename="TVARB.png")
+
 
 client.run(settings['token'])

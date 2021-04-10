@@ -1,5 +1,5 @@
 settings = {
-    'token': 'Your Token',
-    'bot': 'BotName',
+    'token': 'Your token',
+    'bot': 'Your Bot Name',
     'id': 12345678
 }
