@@ -9,9 +9,6 @@ client = discord.Client()
 
 start_time = datetime.now()
 start_time.isoformat(sep='T')
-memory = ''
-count = 0
-cache_users = []
 history = { }
 
 
