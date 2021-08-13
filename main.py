@@ -23,7 +23,6 @@ async def on_message(message):
     if command in commands_dict:
         await commands_dict[command](message)
 
-    #await check_cmd(message)
     await message_repeating(message)
     return
 
@@ -40,19 +39,5 @@ async def message_repeating(message):
             history[message.channel.id]['count'] = 1
     else:
         history[message.channel.id] = {'text': message.content, 'count': 1}
-
-
-async def check_cmd(message):
-    if message.content.startswith('$Homoquote'):
-        random_file_name = random.choice(os.listdir(os.getcwd() + Constants.HOMOQUOTES_IMG_DIRECTORY))
-        await message.channel.send(file=discord.File(Constants.HOMOQUOTES_IMG_DIRECTORY + random_file_name))
-    elif message.content.startswith('$StartTime'):
-        await message.channel.send('Bot working since ' + str(start_time.strftime('%b %d %Y %H:%M:%S')))
-    elif message.content.startswith('$RenaStare'):
-        await message.channel.send(file=discord.File(Constants.GIF_DIRECTORY))
-    elif message.content.startswith('$Help'):
-        help_file = open('help.txt')
-        await message.channel.send('User commands:\n' + help_file.read())
-        help_file.close
 
 client.run(settings['token'])
