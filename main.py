@@ -7,9 +7,6 @@ from config import settings
 from datetime import datetime
 
 client = discord.Client()
-
-start_time = datetime.now()
-start_time.isoformat(sep='T')
 history = { }
 
 commands_dict = cmd.commands_init(client)
