@@ -25,7 +25,7 @@ async def message_repeating(message):
     if message.channel.id in history:
         if history[message.channel.id]["text"] == message.content:
             history[message.channel.id]["count"] += 1
-            if(history[message.channel.id]["count"] == 3):
+            if(history[message.channel.id]["count"] == Constants.MESSAGES_TO_REPEAT):
                 await message.channel.send(history[message.channel.id]["text"])
                 history[message.channel.id]["text"] = ""
                 history[message.channel.id]["count"] = 0
