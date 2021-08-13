@@ -1,5 +1,6 @@
 import os, random
 import discord
+import Constants
 from discord.ext import commands
 from config import settings
 from datetime import datetime
@@ -11,6 +12,8 @@ start_time.isoformat(sep='T')
 memory = ''
 count = 0
 cache_users = []
+history = { }
+
 
 @client.event
 async def on_message(message):
@@ -22,32 +25,28 @@ async def on_message(message):
     return
 
 async def message_repeating(message):
-    global count
-    global memory
-    if count == 0:
-        cache_users.append(message.author.id)
-        memory = message.content
-        count += 1
-    elif message.content == memory:
-        if count == 2:
-            await message.channel.send(memory)
-            memory = ""
-        elif not message.author.id in cache_users:
-            cache_users.append(message.author.id)
-            count += 1
+    if message.channel.id in history:
+        if history[message.channel.id]["text"] == message.content:
+            history[message.channel.id]["count"] += 1
+            if(history[message.channel.id]["count"] == 3):
+                await message.channel.send(history[message.channel.id]["text"])
+                history[message.channel.id]["text"] = ""
+                history[message.channel.id]["count"] = 0
+        else:
+            history[message.channel.id]["text"] = message.content
+            history[message.channel.id]["count"] = 1
     else:
-        memory = ""
-        memory = message.content
-        count = 0
+        history[message.channel.id] = {"text": message.content, "count": 1}
+
 
 async def check_cmd(message):
     if message.content.startswith("$Homoquote"):
-        random_file_name = random.choice(os.listdir(os.getcwd() + "/img/homoquotes"))
-        await message.channel.send(file=discord.File("img/homoquotes/" + random_file_name))
+        random_file_name = random.choice(os.listdir(os.getcwd() + Constants.HOMOQUOTES_IMG_DIRECTORY))
+        await message.channel.send(file=discord.File(Constants.HOMOQUOTES_IMG_DIRECTORY + random_file_name))
     elif message.content.startswith("$StartTime"):
         await message.channel.send('Bot working since ' + str(start_time.strftime("%b %d %Y %H:%M:%S")))
     elif message.content.startswith("$RenaStare"):
-        await message.channel.send(file=discord.File("content/post_this_rena.gif"))
+        await message.channel.send(file=discord.File(Constants.GIF_DIRECTORY))
     elif message.content.startswith("$Help"):
         help_file = open('help.txt')
         await message.channel.send("User commands:\n" + help_file.read())
