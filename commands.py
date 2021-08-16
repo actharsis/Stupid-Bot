@@ -1,6 +1,6 @@
 import discord
 import os, random
-import Constants
+import constants
 from datetime import datetime
 
 global client
@@ -18,7 +18,7 @@ def commands_init(clnt):
 
 
 async def rena_stare(message):
-    await message.channel.send(file=discord.File(Constants.GIF_DIRECTORY))
+    await message.channel.send(file=discord.File(constants.GIF_DIRECTORY))
 
 
 async def send_start_time(message):
@@ -26,8 +26,8 @@ async def send_start_time(message):
 
 
 async def homoquote(message):
-    random_file_name = random.choice(os.listdir(os.getcwd() + '/' + Constants.HOMOQUOTES_IMG_DIRECTORY))
-    await message.channel.send(file=discord.File(Constants.HOMOQUOTES_IMG_DIRECTORY + '/' + random_file_name))
+    random_file_name = random.choice(os.listdir(os.getcwd() + '/' + constants.HOMOQUOTES_IMG_DIRECTORY))
+    await message.channel.send(file=discord.File(constants.HOMOQUOTES_IMG_DIRECTORY + '/' + random_file_name))
 
 
 async def help(message):
