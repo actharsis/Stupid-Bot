@@ -1,6 +1,6 @@
 import discord
 import constants
-import commands as cmd
+import modules.commands as cmd
 from modules.message_analysis import Analysis_module
 from config import settings
 
@@ -18,7 +18,7 @@ async def on_message(message):
     command = message.content.split(' ', maxsplit = 1)[0]
     if command in commands_dict:
         await commands_dict[command](message)
-        
+
     await message_repeating(message)
     analyzer.save_message(message)
 
