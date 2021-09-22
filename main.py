@@ -5,8 +5,8 @@ from modules.message_analysis import Analysis_module
 from config import settings
 
 client = discord.Client()
-commands_dict = cmd.commands_init(client)
-analyzer = Analysis_module()
+analyzer = Analysis_module(client)
+commands_module = cmd.Commands_module(analyzer)
 history = { }
 
 
@@ -15,10 +15,7 @@ async def on_message(message):
     if message.author.id == client.user.id:
         return
 
-    command = message.content.split(' ', maxsplit = 1)[0]
-    if command in commands_dict:
-        await commands_dict[command](message)
-
+    await commands_module.execute_command(message)
     await message_repeating(message)
     analyzer.save_message(message)
 
@@ -26,7 +23,7 @@ async def on_message(message):
 
 
 async def message_repeating(message):
-    if message.channel.id in history:
+    if message.channel.id in history and not message.content == '':
         if history[message.channel.id]['text'] == message.content:
             history[message.channel.id]['count'] += 1
             if(history[message.channel.id]['count'] == constants.MESSAGES_TO_REPEAT):
