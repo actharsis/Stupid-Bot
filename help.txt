@@ -1,3 +1,4 @@
 $Homoquote - get cringe homo quote
 $RenaStare - let Rena watch in your soul
 $StartTime - check bot's start time
+$Top - users' scores

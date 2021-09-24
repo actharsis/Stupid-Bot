@@ -1,25 +1,54 @@
 import discord
 import constants
-import modules.commands as cmd
+import os, random
 from modules.message_analysis import Analysis_module
+from discord.ext import commands
 from config import settings
+from datetime import datetime
 
-client = discord.Client()
+client = commands.Bot(command_prefix=settings['prefix'], case_insensitive=True)
 analyzer = Analysis_module(client)
-commands_module = cmd.Commands_module(analyzer)
+start_time = datetime.now()
+start_time.isoformat(sep='T')
 history = { }
-
 
 @client.event
 async def on_message(message):
     if message.author.id == client.user.id:
         return
 
-    await commands_module.execute_command(message)
     await message_repeating(message)
     analyzer.save_message(message)
 
-    return
+    await client.process_commands(message)
+
+
+@client.command(name='RenaStare')
+async def rena_stare(message):
+    await message.channel.send(file=discord.File(constants.GIF_DIRECTORY))
+
+
+@client.command(name='StartTime')
+async def send_start_time(message):
+    await message.channel.send('Bot working since ' + str(start_time.strftime('%b %d %Y %H:%M:%S')))
+
+
+@client.command(name='HomoQuote')
+async def homoquote(message):
+    random_file_name = random.choice(os.listdir(os.getcwd() + '/' + constants.HOMOQUOTES_IMG_DIRECTORY))
+    await message.channel.send(file=discord.File(constants.HOMOQUOTES_IMG_DIRECTORY + '/' + random_file_name))
+
+
+@client.command(name='Commands')
+async def help(message):
+    help_file = open('help.txt')
+    await message.channel.send('User commands:\n' + help_file.read())
+    help_file.close
+
+
+@client.command(name='Top')
+async def top(message):
+        await analyzer.get_top(message)
 
 
 async def message_repeating(message):
@@ -36,4 +65,4 @@ async def message_repeating(message):
     else:
         history[message.channel.id] = {'text': message.content, 'count': 1}
 
-client.run(settings['token'])
+client.run(settings['token'], bot = True)

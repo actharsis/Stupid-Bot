@@ -35,7 +35,7 @@ class Analysis_module:
 
     async def get_top(self, message):
         messages = models.MessageModel.select(models.MessageModel.author_id, 
-            models.MessageModel.message_content).where(models.MessageModel.server_id == message.guild.id)
+            models.MessageModel.message_content, models.MessageModel.attachment).where(models.MessageModel.server_id == message.guild.id)
         authors = self.get_authors(messages)
         user_scores = {}
         for a in authors:
@@ -57,6 +57,7 @@ class Analysis_module:
         for msg in list(messages.objects()):
             if(msg.author_id == author_id):
                 user_points += len(msg.message_content) * 0.1
+                user_points += msg.attachment * 5
         return round(user_points, 2)
 
 
