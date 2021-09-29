@@ -15,3 +15,13 @@ class MessageModel(Model):
     class Meta:
         database = db
         db_table = 'Messages'
+
+class VoiceActivityModel(Model):
+    id = PrimaryKeyField(unique=True)
+    guild_id = CharField()
+    user_id = CharField()
+    activity_minutes = IntegerField()
+
+    class Meta:
+        database = db
+        db_table = 'VoiceActivity'

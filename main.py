@@ -30,7 +30,7 @@ async def rena_stare(message):
 
 @client.command(name='StartTime')
 async def send_start_time(message):
-    await message.channel.send('Bot working since ' + str(start_time.strftime('%b %d %Y %H:%M:%S')))
+    await message.channel.send('Bot working since ' + str(start_time.strftime('%b %d %Y %H:%M:%S'), 'UTC+03:00'))
 
 
 @client.command(name='HomoQuote')
@@ -41,9 +41,8 @@ async def homoquote(message):
 
 @client.command(name='Commands')
 async def help(message):
-    help_file = open('help.txt')
-    await message.channel.send('User commands:\n' + help_file.read())
-    help_file.close
+    with open('help.txt') as help_file:
+        await message.channel.send('User commands:\n' + help_file.read())
 
 
 @client.command(name='Top')
@@ -52,7 +51,7 @@ async def top(message):
 
 
 async def message_repeating(message):
-    if message.channel.id in history and not message.content == '':
+    if message.channel.id in history and message.content != '':
         if history[message.channel.id]['text'] == message.content:
             history[message.channel.id]['count'] += 1
             if(history[message.channel.id]['count'] == constants.MESSAGES_TO_REPEAT):
