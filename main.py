@@ -6,7 +6,7 @@ from discord.ext import commands
 from config import settings
 from datetime import datetime
 
-client = commands.Bot(command_prefix=settings['prefix'], case_insensitive=True)
+client = commands.Bot(command_prefix=settings['prefix'], case_insensitive=True, help_command=None)
 analyzer = Analysis_module(client)
 start_time = datetime.now()
 start_time.isoformat(sep='T')
@@ -30,7 +30,7 @@ async def rena_stare(message):
 
 @client.command(name='StartTime')
 async def send_start_time(message):
-    await message.channel.send('Bot working since ' + str(start_time.strftime('%b %d %Y %H:%M:%S'), 'UTC+03:00'))
+    await message.channel.send('Bot working since ' + str(start_time.strftime('%b %d %Y %H:%M:%S') + ' UTC+03:00'))
 
 
 @client.command(name='HomoQuote')
@@ -39,7 +39,7 @@ async def homoquote(message):
     await message.channel.send(file=discord.File(constants.HOMOQUOTES_IMG_DIRECTORY + '/' + random_file_name))
 
 
-@client.command(name='Commands')
+@client.command()
 async def help(message):
     with open('help.txt') as help_file:
         await message.channel.send('User commands:\n' + help_file.read())
