@@ -27,6 +27,23 @@ class Analysis_module:
 
         self.db.create_tables([models.MessageModel, models.VoiceActivityModel])
 
+    async def get_voice_activity(self, ctx):
+        voice_activities = models.VoiceActivityModel.select(models.VoiceActivityModel.user_id, 
+                models.VoiceActivityModel.activity_minutes, models.VoiceActivityModel.guild_id)
+                
+        users_activity = []
+        for voice_activity in voice_activities.objects():
+            if voice_activity.guild_id == str(ctx.guild.id):
+                users_activity.append({'user_id': voice_activity.user_id, 'activity': voice_activity.activity_minutes / 60})
+
+        users_activity.sort(key = lambda x: x['activity'])
+        users_activity.reverse()
+        answer = '```'
+        for activity in users_activity:
+            answer += '#' + str(users_activity.index(activity) + 1) + ' ' + await self.fetch_user(activity['user_id']) + ' - ' + str(round(activity['activity'], 2)) + 'h' '\n'
+        answer += '```'
+        await ctx.channel.send(answer)
+
     def voice_activity_check(self):
         while True:
             activity_history = models.VoiceActivityModel.select(models.VoiceActivityModel.id, models.VoiceActivityModel.user_id, 
@@ -56,21 +73,28 @@ class Analysis_module:
         is_bot = message.author.bot, channel_id = message.channel.id,
         message_content = message.content, attachment = len(message.attachments))
 
-    async def get_top(self, message):
+    async def get_top(self, ctx):
         messages = models.MessageModel.select(models.MessageModel.author_id, models.MessageModel.message_content, 
-            models.MessageModel.attachment, models.MessageModel.server_id).where(models.MessageModel.server_id == message.guild.id)
+            models.MessageModel.attachment, models.MessageModel.server_id).where(models.MessageModel.server_id == ctx.guild.id)
         voice_activities = activity_history = models.VoiceActivityModel.select(models.VoiceActivityModel.user_id, 
                 models.VoiceActivityModel.activity_minutes, models.VoiceActivityModel.guild_id)
         authors = self.get_authors(messages)
-        user_scores = {a: self.get_user_points(messages, voice_activities, message.guild.id, a) for a in authors}
+        user_scores = {a: self.get_user_points(messages, voice_activities, ctx.guild.id, a) for a in authors}
         answer = await self.create_userscores_answer(user_scores)
-        await message.channel.send(answer)
+        await ctx.channel.send(answer)
 
     def get_authors(self, messages):
         authors_list = []
         for msg in list(messages.objects()):
             if msg.author_id not in authors_list:
                 authors_list.append(msg.author_id)
+        return authors_list
+
+    def get_users_by_voice(self, voice_activities):
+        authors_list = []
+        for msg in list(voice_activities.objects()):
+            if msg.author_id not in authors_list:
+                authors_list.append(msg.user_id)
         return authors_list
 
     def get_user_points(self, messages, voice_activities, guild_id, author_id):

@@ -13,55 +13,60 @@ start_time.isoformat(sep='T')
 history = { }
 
 @client.event
-async def on_message(message):
-    if message.author.id == client.user.id:
+async def on_message(ctx):
+    if ctx.author.id == client.user.id:
         return
 
-    await message_repeating(message)
-    analyzer.save_message(message)
+    await message_repeating(ctx)
+    analyzer.save_message(ctx)
 
-    await client.process_commands(message)
+    await client.process_commands(ctx)
 
 
 @client.command(name='RenaStare')
-async def rena_stare(message):
-    await message.channel.send(file=discord.File(constants.GIF_DIRECTORY))
+async def rena_stare(ctx):
+    await ctx.channel.send(file=discord.File(constants.GIF_DIRECTORY))
 
 
 @client.command(name='StartTime')
-async def send_start_time(message):
-    await message.channel.send('Bot working since ' + str(start_time.strftime('%b %d %Y %H:%M:%S') + ' UTC+03:00'))
+async def send_start_time(ctx):
+    await ctx.channel.send('Bot working since ' + str(start_time.strftime('%b %d %Y %H:%M:%S') + ' UTC+03:00'))
 
 
 @client.command(name='HomoQuote')
-async def homoquote(message):
+async def homoquote(ctx):
     random_file_name = random.choice(os.listdir(os.getcwd() + '/' + constants.HOMOQUOTES_IMG_DIRECTORY))
-    await message.channel.send(file=discord.File(constants.HOMOQUOTES_IMG_DIRECTORY + '/' + random_file_name))
+    await ctx.channel.send(file=discord.File(constants.HOMOQUOTES_IMG_DIRECTORY + '/' + random_file_name))
 
 
 @client.command()
-async def help(message):
+async def help(ctx):
     with open('help.txt') as help_file:
-        await message.channel.send('User commands:\n' + help_file.read())
+        await ctx.channel.send('User commands:\n' + help_file.read())
 
 
 @client.command(name='Top')
-async def top(message):
-        await analyzer.get_top(message)
+async def top(ctx):
+        await analyzer.get_top(ctx)
 
 
-async def message_repeating(message):
-    if message.channel.id in history and message.content != '':
-        if history[message.channel.id]['text'] == message.content:
-            history[message.channel.id]['count'] += 1
-            if(history[message.channel.id]['count'] == constants.MESSAGES_TO_REPEAT):
-                await message.channel.send(history[message.channel.id]['text'])
-                history[message.channel.id]['text'] = ''
-                history[message.channel.id]['count'] = 0
+@client.command(name='Voice')
+async def top(ctx):
+        await analyzer.get_voice_activity(ctx)
+
+
+async def message_repeating(ctx):
+    if ctx.channel.id in history and ctx.content != '':
+        if history[ctx.channel.id]['text'] == ctx.content:
+            history[ctx.channel.id]['count'] += 1
+            if(history[ctx.channel.id]['count'] == constants.MESSAGES_TO_REPEAT):
+                await ctx.channel.send(history[ctx.channel.id]['text'])
+                history[ctx.channel.id]['text'] = ''
+                history[ctx.channel.id]['count'] = 0
         else:
-            history[message.channel.id]['text'] = message.content
-            history[message.channel.id]['count'] = 1
+            history[ctx.channel.id]['text'] = ctx.content
+            history[ctx.channel.id]['count'] = 1
     else:
-        history[message.channel.id] = {'text': message.content, 'count': 1}
+        history[ctx.channel.id] = {'text': ctx.content, 'count': 1}
 
 client.run(settings['token'], bot = True)
