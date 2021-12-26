@@ -4,6 +4,7 @@ import os, random
 from modules.message_analysis import Analysis_module
 from discord.ext import commands
 from config import settings
+from config import ydl_opts
 from datetime import datetime
 import yt_dlp
 import asyncio
@@ -15,7 +16,7 @@ start_time.isoformat(sep='T')
 history = { }
 very_clever_quotes = []
 
-with open('clever_quotes.txt', encoding='utf-8') as file:
+with open(constants.CLEVER_QUOTES_DIR, encoding='utf-8') as file:
         very_clever_quotes = file.read().split(";")
 
 @client.event
@@ -29,15 +30,6 @@ async def on_message(ctx):
 
     await client.process_commands(ctx)
 
-
-ydl_opts = {
-    'format': 'bestaudio/best',
-    'postprocessors': [{
-        'key': 'FFmpegExtractAudio',
-        'preferredcodec': 'mp3',
-        'preferredquality': '192',
-    }],
-}   
 
 def endSong(guild, path):
     os.remove(path)
