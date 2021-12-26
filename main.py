@@ -12,7 +12,6 @@ import asyncio
 # misc init
 start_time = datetime.now()
 start_time.isoformat(sep='T')
-true_random = random.SystemRandom()
 history = { }
 
 very_clever_quotes = None
@@ -20,7 +19,7 @@ with open(constants.CLEVER_QUOTES_DIR, encoding='utf-8') as file:
         very_clever_quotes = file.read().split(";")
 
 replies = None
-with open('replies.txt', encoding="utf-8") as f:
+with open(constants.REPLIES_DIR, encoding="utf-8") as f:
     lines = f.read().splitlines()
 if len(lines) > 0:
     pairs = [l.split('//')[1].split('->') for l in lines]
@@ -72,7 +71,7 @@ async def reference_reaction(ctx):
     if replies:
         special_replies = get_special_replies(ctx.author.id)
         if special_replies:
-            special_reply = true_random.choice(special_replies)
+            special_reply = random.choice(special_replies)
             if special_reply.startswith("&") or special_reply.startswith("№"):
                 reply = f"{special_reply[1:]}"
             else:
@@ -99,7 +98,7 @@ async def on_message(ctx):
     await client.process_commands(ctx)
 
 
-@client.command(name='disconnect', pass_ctx=True)
+@client.command(name='Disconnect', pass_ctx=True)
 async def disconnect(ctx):
     vc = ctx.message.guild.voice_client
     await vc.disconnect()

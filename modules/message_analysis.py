@@ -6,11 +6,6 @@ from threading import *
 from peewee import *
 
 class Analysis_module:
-    global db
-    global cursor
-    global discord_client
-    global voice_activity_thread
-
     def __init__(self, client):
         self.init_db()
         self.discord_client = client
