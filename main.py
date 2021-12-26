@@ -70,7 +70,7 @@ async def reference_reaction(ctx):
             special_replies = get_special_replies(ctx.author.id)
             if special_replies:
                 special_reply = true_random.choice(special_replies)
-                if special_reply.startswith("&"):
+                if special_reply.startswith("&") or special_reply.startswith("№"):
                     reply = f"{special_reply[1:]}"
                 else:
                     reply = f"{ctx.author.mention}, {special_reply}"       
