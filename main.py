@@ -64,19 +64,22 @@ async def message_repeating(ctx):
         history[ctx.channel.id] = {'text': ctx.content, 'count': 1}
 
 async def reference_reaction(ctx):
-    if ctx.reference and ctx.reference.resolved.author.id == client.user.id and ctx.author.id != client.user.id:
+    if (not ctx.reference
+        or ctx.reference.resolved.author.id != client.user.id
+        or ctx.author.id == client.user.id):
+            return
 
-        if replies:
-            special_replies = get_special_replies(ctx.author.id)
-            if special_replies:
-                special_reply = true_random.choice(special_replies)
-                if special_reply.startswith("&") or special_reply.startswith("№"):
-                    reply = f"{special_reply[1:]}"
-                else:
-                    reply = f"{ctx.author.mention}, {special_reply}"       
+    if replies:
+        special_replies = get_special_replies(ctx.author.id)
+        if special_replies:
+            special_reply = true_random.choice(special_replies)
+            if special_reply.startswith("&") or special_reply.startswith("№"):
+                reply = f"{special_reply[1:]}"
             else:
-                reply = ctx.channel.send(f"{ctx.author.mention}, вы кто?")
-        await ctx.channel.send(reply)
+                reply = f"{ctx.author.mention}, {special_reply}"       
+        else:
+            reply = ctx.channel.send(f"{ctx.author.mention}, вы кто?")
+    await ctx.channel.send(reply)
 
 # client init
 client = commands.Bot(command_prefix=settings['prefix'], case_insensitive=True, help_command=None)
