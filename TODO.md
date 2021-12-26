@@ -10,8 +10,8 @@
 > - Fix shitty code in message analysis module
 > - Make tests
 > - DB querries optimization
+> - Add playlist
 
 BUGS:
 > - When bot join server commands Voice and Top returns ```. It caused by no rows in tables for this server.
 > - Songs with ' crashing
-> - Voice disconnect after playing song
