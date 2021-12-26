@@ -23,7 +23,7 @@ replies = None
 with open('replies.txt', encoding="utf-8") as f:
     lines = f.read().splitlines()
 if len(lines) > 0:
-    pairs = [l.split('//')[0].split('->') for l in lines]
+    pairs = [l.split('//')[1].split('->') for l in lines]
     for p in pairs:
         p[1] = p[1].split(";")
     replies = {int(p[0]):p[1] for p in pairs}
@@ -70,7 +70,10 @@ async def reference_reaction(ctx):
             special_replies = get_special_replies(ctx.author.id)
             if special_replies:
                 special_reply = true_random.choice(special_replies)
-                reply = f"{ctx.author.mention}, {special_reply}"
+                if special_reply.startswith("&") or special_reply.startswith("№"):
+                    reply = f"{special_reply[1:]}"
+                else:
+                    reply = f"{ctx.author.mention}, {special_reply}"       
             else:
                 reply = ctx.channel.send(f"{ctx.author.mention}, вы кто?")
         await ctx.channel.send(reply)
