@@ -1,3 +1,4 @@
 settings = {
-    'token': 'Your token'
+    'token': 'Your token',
+    'prefix': '$'
 }
