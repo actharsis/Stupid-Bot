@@ -15,7 +15,7 @@ start_time.isoformat(sep='T')
 true_random = random.SystemRandom()
 history = { }
 
-very_clever_quotes = []
+very_clever_quotes = None
 with open(constants.CLEVER_QUOTES_DIR, encoding='utf-8') as file:
         very_clever_quotes = file.read().split(";")
 
