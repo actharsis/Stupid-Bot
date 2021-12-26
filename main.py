@@ -112,13 +112,11 @@ async def play(ctx, url):
     if voice is None:
         voice_client = await channel.connect()
 
-    guild = ctx.message.guild
-
-    with yt_dlp.YoutubeDL(settings.ydl_opts) as ydl:
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         file = ydl.extract_info(url, download=True)
         path = str(file['title']) + " [" + str(file['id'] + "].mp3")
 
-    voice_client.play(discord.FFmpegPCMAudio(path), after=lambda x: endSong(guild, path))
+    voice_client.play(discord.FFmpegPCMAudio(path), after=lambda x: endSong(ctx.message.guild, path))
     voice_client.source = discord.PCMVolumeTransformer(voice_client.source, 1)
 
     await ctx.send(f'**Music: **{url}')
