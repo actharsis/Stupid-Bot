@@ -15,6 +15,7 @@ start_time.isoformat(sep='T')
 true_random = random.SystemRandom()
 history = { }
 
+very_clever_quotes = []
 with open(constants.CLEVER_QUOTES_DIR, encoding='utf-8') as file:
         very_clever_quotes = file.read().split(";")
 
@@ -26,16 +27,6 @@ if len(lines) > 0:
     for p in pairs:
         p[1] = p[1].split(";")
     replies = {int(p[0]):p[1] for p in pairs}
-
-ydl_opts = {
-    'format': 'bestaudio/best',
-    'postprocessors': [{
-        'key': 'FFmpegExtractAudio',
-        'preferredcodec': 'mp3',
-        'preferredquality': '192',
-    }],
-}   
-
 
 # functions
 def endSong(guild, path):
@@ -123,7 +114,7 @@ async def play(ctx, url):
 
     guild = ctx.message.guild
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+    with yt_dlp.YoutubeDL(settings.ydl_opts) as ydl:
         file = ydl.extract_info(url, download=True)
         path = str(file['title']) + " [" + str(file['id'] + "].mp3")
 
