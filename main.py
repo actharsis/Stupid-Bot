@@ -6,7 +6,7 @@ from discord.ext import commands
 from config import settings
 from datetime import datetime
 import yt_dlp
-import sys
+import asyncio
 
 client = commands.Bot(command_prefix=settings['prefix'], case_insensitive=True, help_command=None)
 analyzer = Analysis_module(client)
@@ -54,7 +54,6 @@ async def play(ctx, url):
     if not ctx.message.author.voice:
         await ctx.send('you are not connected to a voice channel')
         return
-
     else:
         channel = ctx.message.author.voice.channel
 
@@ -74,11 +73,11 @@ async def play(ctx, url):
 
     await ctx.send(f'**Music: **{url}')
 
-    #while voice_client.is_playing():
-    #    await asyncio.sleep(1)
-    #else:
-    #    await voice_client.disconnect()
-    #    print("Disconnected")
+    while voice_client.is_playing():
+        await asyncio.sleep(1)
+    else:
+        await voice_client.disconnect()
+        print("Disconnected")
 
 
 @client.command(name='RenaStare')
