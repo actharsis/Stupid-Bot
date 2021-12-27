@@ -75,10 +75,10 @@ async def reference_reaction(ctx):
             if special_reply.startswith("&") or special_reply.startswith("№"):
                 reply = f"{special_reply[1:]}"
             else:
-                reply = f"{ctx.author.mention}, {special_reply}"       
+                reply = f"{ctx.author.mention}, {special_reply}"
+            await ctx.channel.send(reply)      
         else:
-            reply = ctx.channel.send(f"{ctx.author.mention}, вы кто?")
-    await ctx.channel.send(reply)
+            reply = await ctx.channel.send(f"{ctx.author.mention}, вы кто?")
 
 # client init
 client = commands.Bot(command_prefix=settings['prefix'], case_insensitive=True, help_command=None)
