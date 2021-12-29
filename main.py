@@ -76,9 +76,7 @@ async def reference_reaction(ctx):
                 reply = f"{special_reply[1:]}"
             else:
                 reply = f"{ctx.author.mention}, {special_reply}"
-            await ctx.channel.send(reply)      
-        else:
-            reply = await ctx.channel.send(f"{ctx.author.mention}, вы кто?")
+            await ctx.channel.send(reply)
 
 # client init
 client = commands.Bot(command_prefix=settings['prefix'], case_insensitive=True, help_command=None)
