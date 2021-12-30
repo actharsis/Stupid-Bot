@@ -126,13 +126,13 @@ class PixivCog(commands.Cog):
                 demojized = emoji.demojize(reaction.emoji)
                 if demojized == ':red_heart:':
                     self.api.illust_bookmark_add(illust_id)
-                if demojized == ':growing_heart:':
+                elif demojized == ':growing_heart:':
                     self.api.illust_bookmark_add(illust_id)
                     query = self.api.illust_related(illust_id)
                     await self.show_page(query, limit=5, save_query=False)
-                if demojized == ':broken_heart:':
+                elif demojized == ':broken_heart:':
                     self.api.illust_bookmark_delete(illust_id)
-                if demojized == ':red_question_mark:':
+                elif demojized == ':red_question_mark:':
                     detail = self.api.illust_bookmark_detail(illust_id)
                     self.chat.send("Art detail:\n" + detail)
                 if demojized in emojis:
