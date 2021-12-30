@@ -30,22 +30,22 @@ class Conversation:
 # misc init
 start_time = datetime.now()
 start_time.isoformat(sep='T')
+history = {}
 
-history = { }
-
-very_clever_quotes = []
+very_clever_quotes = None
 with open(constants.CLEVER_QUOTES_DIR, encoding='utf-8') as file:
-        very_clever_quotes = file.read().split(";")
+    very_clever_quotes = file.read().split(";")
 
 replies = None
-with open('replies.txt', encoding="utf-8") as f:
+with open(constants.REPLIES_DIR, encoding="utf-8") as f:
     lines = f.read().splitlines()
 if len(lines) > 0:
     pairs = [l.split('//')[1].split('->') for l in lines]
     for p in pairs:
         p[1] = p[1] if p[1].endswith(';') else p[1]+';'
         p[1] = p[1].split(";")
-    replies = {int(p[0]):p[1] for p in pairs}
+    replies = {int(p[0]): p[1] for p in pairs}
+
 
 conversations = {r[0]: Conversation(r[1]) for r in replies.items()} if replies else None
 
@@ -74,7 +74,7 @@ async def message_repeating(ctx):
     if ctx.channel.id in history and ctx.content != '':
         if history[ctx.channel.id]['text'] == ctx.content:
             history[ctx.channel.id]['count'] += 1
-            if(history[ctx.channel.id]['count'] == constants.MESSAGES_TO_REPEAT):
+            if (history[ctx.channel.id]['count'] == constants.MESSAGES_TO_REPEAT):
                 await ctx.channel.send(history[ctx.channel.id]['text'])
                 history[ctx.channel.id]['text'] = ''
                 history[ctx.channel.id]['count'] = 0
@@ -88,7 +88,7 @@ async def message_repeating(ctx):
 async def reference_reaction(ctx):
     author_id = ctx.author.id
 
-    if ctx.reference is not None and ctx.reference.resolved.author.id == client.user.id and ctx.author.id != client.user.id:
+    if ctx.reference is not None and ctx.reference.resolved.author.id == client.user.id and author_id != client.user.id:
         if conversations:
             if author_id in conversations:
                 special_reply = conversations[author_id].reply()
@@ -97,8 +97,9 @@ async def reference_reaction(ctx):
                 else:
                     reply = f"{ctx.author.mention}, {special_reply}"       
             else:
-                reply = ctx.channel.send(f"{ctx.author.mention}, вы кто?")
-        await ctx.channel.send(reply)
+                reply = f"{ctx.author.mention}, кто вы?"
+            await ctx.channel.send(reply)
+
 
 
 # client init
@@ -120,7 +121,7 @@ async def on_message(ctx):
     await client.process_commands(ctx)
 
 
-@client.command(name='disconnect', pass_ctx=True)
+@client.command(name='Disconnect', pass_ctx=True)
 async def disconnect(ctx):
     vc = ctx.message.guild.voice_client
     await vc.disconnect()
@@ -139,13 +140,11 @@ async def play(ctx, url):
     if voice is None:
         voice_client = await channel.connect()
 
-    guild = ctx.message.guild
-
-    with yt_dlp.YoutubeDL(settings.ydl_opts) as ydl:
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         file = ydl.extract_info(url, download=True)
         path = str(file['title']) + " [" + str(file['id'] + "].mp3")
 
-    voice_client.play(discord.FFmpegPCMAudio(path), after=lambda x: endSong(guild, path))
+    voice_client.play(discord.FFmpegPCMAudio(path), after=lambda x: endSong(ctx.message.guild, path))
     voice_client.source = discord.PCMVolumeTransformer(voice_client.source, 1)
 
     await ctx.send(f'**Music: **{url}')
@@ -181,13 +180,18 @@ async def help(ctx):
 
 @client.command(name='Top')
 async def top(ctx):
-        await analyzer.get_top(ctx)
+    await analyzer.get_top(ctx)
 
 
 @client.command(name='Voice')
 async def top(ctx):
-        await analyzer.get_voice_activity(ctx)
+    await analyzer.get_voice_activity(ctx)
 
+
+initial_extensions = ['modules.pixiv_bot']
+
+for extension in initial_extensions:
+    client.load_extension(extension)
 
 # exec
-client.run(settings['token'], bot = True)
+client.run(settings['token'], bot=True)
