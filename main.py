@@ -12,11 +12,11 @@ import asyncio
 # misc init
 start_time = datetime.now()
 start_time.isoformat(sep='T')
-history = { }
+history = {}
 
 very_clever_quotes = None
 with open(constants.CLEVER_QUOTES_DIR, encoding='utf-8') as file:
-        very_clever_quotes = file.read().split(";")
+    very_clever_quotes = file.read().split(";")
 
 replies = None
 with open(constants.REPLIES_DIR, encoding="utf-8") as f:
@@ -25,7 +25,8 @@ if len(lines) > 0:
     pairs = [l.split('//')[1].split('->') for l in lines]
     for p in pairs:
         p[1] = p[1].split(";")
-    replies = {int(p[0]):p[1] for p in pairs}
+    replies = {int(p[0]): p[1] for p in pairs}
+
 
 # functions
 def endSong(guild, path):
@@ -52,7 +53,7 @@ async def message_repeating(ctx):
     if ctx.channel.id in history and ctx.content != '':
         if history[ctx.channel.id]['text'] == ctx.content:
             history[ctx.channel.id]['count'] += 1
-            if(history[ctx.channel.id]['count'] == constants.MESSAGES_TO_REPEAT):
+            if (history[ctx.channel.id]['count'] == constants.MESSAGES_TO_REPEAT):
                 await ctx.channel.send(history[ctx.channel.id]['text'])
                 history[ctx.channel.id]['text'] = ''
                 history[ctx.channel.id]['count'] = 0
@@ -62,11 +63,12 @@ async def message_repeating(ctx):
     else:
         history[ctx.channel.id] = {'text': ctx.content, 'count': 1}
 
+
 async def reference_reaction(ctx):
     if (not ctx.reference
-        or ctx.reference.resolved.author.id != client.user.id
-        or ctx.author.id == client.user.id):
-            return
+            or ctx.reference.resolved.author.id != client.user.id
+            or ctx.author.id == client.user.id):
+        return
 
     if replies:
         special_replies = get_special_replies(ctx.author.id)
@@ -78,9 +80,11 @@ async def reference_reaction(ctx):
                 reply = f"{ctx.author.mention}, {special_reply}"
             await ctx.channel.send(reply)
 
+
 # client init
 client = commands.Bot(command_prefix=settings['prefix'], case_insensitive=True, help_command=None)
 analyzer = Analysis_module(client)
+
 
 # commands
 @client.event
@@ -155,13 +159,18 @@ async def help(ctx):
 
 @client.command(name='Top')
 async def top(ctx):
-        await analyzer.get_top(ctx)
+    await analyzer.get_top(ctx)
 
 
 @client.command(name='Voice')
 async def top(ctx):
-        await analyzer.get_voice_activity(ctx)
+    await analyzer.get_voice_activity(ctx)
 
+
+initial_extensions = ['modules.pixiv_bot']
+
+for extension in initial_extensions:
+    client.load_extension(extension)
 
 # exec
-client.run(settings['token'], bot = True)
+client.run(settings['token'], bot=True)
