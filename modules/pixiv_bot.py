@@ -59,7 +59,7 @@ class PixivCog(commands.Cog):
     async def show_page(self, query, limit=None, save_query=True):
         if self.chat is not None:
             if query.illusts is None:
-                await self.chat.send('Плохой запрос')
+                await self.chat.send('Bad request')
                 return
             for index, illust in enumerate(query.illusts):
                 if limit is not None and index == limit:
@@ -77,7 +77,7 @@ class PixivCog(commands.Cog):
     @commands.command(name='start')
     async def start_pixiv(self, ctx):
         self.chat = ctx.channel
-        await ctx.send('Канал закреплен как канал с картинками')
+        await ctx.send('Art channel selected')
 
     @commands.command(name='next')
     async def next(self, ctx):
@@ -116,9 +116,9 @@ class PixivCog(commands.Cog):
     @commands.command(name='when')
     async def time_to_update(self, ctx):
         if self.last_auto_update is None:
-            self.chat.send('Автоподгрузка не запущена')
+            self.chat.send('autopost turned off')
         delta = str(time.time() - self.last_auto_update)
-        self.chat.send('До автоподгруза осталось ' + delta + ' секунд')
+        self.chat.send(delta + ' secs remain before autopost')
 
     @commands.Cog.listener()
     async def on_reaction_add(self, reaction, user):
