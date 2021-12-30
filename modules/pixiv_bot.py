@@ -22,9 +22,8 @@ def is_date(date_text):
 
 
 def read_pixiv_refresh_token():
-    f = open("pixiv_token.txt", "r")
-    token = f.readline()
-    f.close()
+    with open("pixiv_token.txt", "r") as f:
+        token = f.readline()
     return token
 
 
@@ -35,8 +34,7 @@ class BetterAppPixivAPI(AppPixivAPI):
         file = name or os.path.basename(url)
 
         with self.requests_call('GET', url, headers={'Referer': referer}, stream=True) as response:
-            img = Image.open(response.raw)
-            return img
+            return Image.open(response.raw)
 
 
 class PixivCog(commands.Cog):
@@ -52,9 +50,7 @@ class PixivCog(commands.Cog):
 
     def check_picture_channel(self, ctx):
         ch = ctx.channel
-        if ch == self.chat:
-            return True
-        return False
+        return ch == self.chat
 
     async def show_page(self, query, limit=None, save_query=True):
         if self.chat is not None:
@@ -158,9 +154,8 @@ class PixivCog(commands.Cog):
         timestamp = time.time()
         if self.token_expiration_time is None or self.token_expiration_time - timestamp < 1000:
             token, ttl = get_refresh_token(read_pixiv_refresh_token())
-            out = open("pixiv_token.txt", "w")
-            out.write(token)
-            out.close()
+            with open("pixiv_token.txt", "w") as out:
+                out.write(token)
             self.token_expiration_time = timestamp + ttl
             self.api.auth(refresh_token=token)
             print('pixiv token updated')
