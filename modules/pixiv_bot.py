@@ -22,9 +22,8 @@ def is_date(date_text):
 
 
 def read_pixiv_refresh_token():
-    f = open("pixiv_token.txt", "r")
-    token = f.readline()
-    f.close()
+    with open("pixiv_token.txt", "r") as f:
+        token = f.readline()
     return token
 
 
@@ -35,8 +34,7 @@ class BetterAppPixivAPI(AppPixivAPI):
         file = name or os.path.basename(url)
 
         with self.requests_call('GET', url, headers={'Referer': referer}, stream=True) as response:
-            img = Image.open(response.raw)
-            return img
+            return Image.open(response.raw)
 
 
 class PixivCog(commands.Cog):
@@ -52,14 +50,12 @@ class PixivCog(commands.Cog):
 
     def check_picture_channel(self, ctx):
         ch = ctx.channel
-        if ch == self.chat:
-            return True
-        return False
+        return ch == self.chat
 
     async def show_page(self, query, limit=None, save_query=True):
         if self.chat is not None:
             if query.illusts is None:
-                await self.chat.send('Плохой запрос')
+                await self.chat.send('Bad request')
                 return
             for index, illust in enumerate(query.illusts):
                 if limit is not None and index == limit:
@@ -77,7 +73,7 @@ class PixivCog(commands.Cog):
     @commands.command(name='start')
     async def start_pixiv(self, ctx):
         self.chat = ctx.channel
-        await ctx.send('Канал закреплен как канал с картинками')
+        await ctx.send('Art channel selected')
 
     @commands.command(name='next')
     async def next(self, ctx):
@@ -116,9 +112,9 @@ class PixivCog(commands.Cog):
     @commands.command(name='when')
     async def time_to_update(self, ctx):
         if self.last_auto_update is None:
-            self.chat.send('Автоподгрузка не запущена')
+            self.chat.send('autopost turned off')
         delta = str(time.time() - self.last_auto_update)
-        self.chat.send('До автоподгруза осталось ' + delta + ' секунд')
+        self.chat.send(delta + ' secs remain before autopost')
 
     @commands.Cog.listener()
     async def on_reaction_add(self, reaction, user):
@@ -158,9 +154,8 @@ class PixivCog(commands.Cog):
         timestamp = time.time()
         if self.token_expiration_time is None or self.token_expiration_time - timestamp < 1000:
             token, ttl = get_refresh_token(read_pixiv_refresh_token())
-            out = open("pixiv_token.txt", "w")
-            out.write(token)
-            out.close()
+            with open("pixiv_token.txt", "w") as out:
+                out.write(token)
             self.token_expiration_time = timestamp + ttl
             self.api.auth(refresh_token=token)
             print('pixiv token updated')
