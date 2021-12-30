@@ -105,7 +105,7 @@ class PixivCog(commands.Cog):
         if self.check_picture_channel(ctx):
             for arg in args:
                 if arg.isnumeric():
-                    limit = arg
+                    limit = int(arg)
                 elif is_date(arg):
                     date = arg
                 else:
