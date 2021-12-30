@@ -9,10 +9,28 @@ from datetime import datetime
 import yt_dlp
 import asyncio
 
+global true_random
+
+true_random = random.SystemRandom()
+
+class Conversation:
+
+    def __init__(self, replies):
+        self.reply_weights = [(reply, 0) for reply in replies]
+
+    def reply(self):
+        candidates = list(filter(lambda x: x[1]==self.reply_weights[0][1], self.reply_weights))
+        reply_tup = true_random.choice(candidates)
+        self.reply_weights.remove(reply_tup)
+        self.reply_weights.append((reply_tup[0], reply_tup[1]+1))
+        self.reply_weights.sort(key=lambda x: x[1])
+        return reply_tup[0]
+        
+
 # misc init
 start_time = datetime.now()
 start_time.isoformat(sep='T')
-true_random = random.SystemRandom()
+
 history = { }
 
 very_clever_quotes = []
@@ -25,8 +43,11 @@ with open('replies.txt', encoding="utf-8") as f:
 if len(lines) > 0:
     pairs = [l.split('//')[1].split('->') for l in lines]
     for p in pairs:
+        p[1] = p[1] if p[1].endswith(';') else p[1]+';'
         p[1] = p[1].split(";")
     replies = {int(p[0]):p[1] for p in pairs}
+
+conversations = {r[0]: Conversation(r[1]) for r in replies.items()} if replies else None
 
 # functions
 def endSong(guild, path):
@@ -63,13 +84,14 @@ async def message_repeating(ctx):
     else:
         history[ctx.channel.id] = {'text': ctx.content, 'count': 1}
 
-async def reference_reaction(ctx):
-    if ctx.reference and ctx.reference.resolved.author.id == client.user.id and ctx.author.id != client.user.id:
 
-        if replies:
-            special_replies = get_special_replies(ctx.author.id)
-            if special_replies:
-                special_reply = true_random.choice(special_replies)
+async def reference_reaction(ctx):
+    author_id = ctx.author.id
+
+    if ctx.reference is not None and ctx.reference.resolved.author.id == client.user.id and ctx.author.id != client.user.id:
+        if conversations:
+            if author_id in conversations:
+                special_reply = conversations[author_id].reply()
                 if special_reply.startswith("&") or special_reply.startswith("№"):
                     reply = f"{special_reply[1:]}"
                 else:
@@ -78,9 +100,11 @@ async def reference_reaction(ctx):
                 reply = ctx.channel.send(f"{ctx.author.mention}, вы кто?")
         await ctx.channel.send(reply)
 
+
 # client init
 client = commands.Bot(command_prefix=settings['prefix'], case_insensitive=True, help_command=None)
 analyzer = Analysis_module(client)
+
 
 # commands
 @client.event

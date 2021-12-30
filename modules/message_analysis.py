@@ -1,4 +1,4 @@
-import models
+from models import MessageModel as mem, VoiceActivityModel as vam
 import constants
 from time import sleep
 from discord import ChannelType
@@ -25,11 +25,11 @@ class Analysis_module:
         self.db = SqliteDatabase(constants.DATABASE_DIR)
         self.cursor = self.db.cursor()
 
-        self.db.create_tables([models.MessageModel, models.VoiceActivityModel])
+        self.db.create_tables([mem, vam])
 
     async def get_voice_activity(self, ctx):
-        voice_activities = models.VoiceActivityModel.select(models.VoiceActivityModel.user_id, 
-                models.VoiceActivityModel.activity_minutes, models.VoiceActivityModel.guild_id)
+        voice_activities = vam.select(vam.user_id, 
+                vam.activity_minutes, vam.guild_id)
                 
         users_activity = []
         for voice_activity in voice_activities.objects():
@@ -46,8 +46,8 @@ class Analysis_module:
 
     def voice_activity_check(self):
         while True:
-            activity_history = models.VoiceActivityModel.select(models.VoiceActivityModel.id, models.VoiceActivityModel.user_id, 
-                models.VoiceActivityModel.activity_minutes, models.VoiceActivityModel.guild_id)
+            activity_history = vam.select(vam.id, vam.user_id, 
+                vam.activity_minutes, vam.guild_id)
             for guild in self.discord_client.guilds:
                 members = []
                 for channel in guild.channels:
@@ -64,38 +64,34 @@ class Analysis_module:
                                 new_record.save()
                                 is_new_user = False
                     if is_new_user:
-                        models.VoiceActivityModel.create(user_id = member, activity_minutes = 1, guild_id = guild.id)
+                        vam.create(user_id = member, activity_minutes = 1, guild_id = guild.id)
             sleep(60)
         
     def save_message(self, message):
-        models.MessageModel.create(server_id = message.guild.id,
+        mem.create(server_id = message.guild.id,
         message_datetime = message.created_at, author_id = message.author.id,
         is_bot = message.author.bot, channel_id = message.channel.id,
-        message_content = message.content, attachment = len(message.attachments))
+        message_content = message.content, attachment = len(message.attachments),
+        mention=(message.reference is not None and message.reference.resolved.author.id == self.discord_client.user.id))
+
+    def load_conversation(self, user_id, lim=10):
+        return list(mem.select(mem.server_id, mem.message_datetime, mem.author_id, mem.message_content, mem.mention).where(mem.author_id==user_id).order_by(mem.message_datetime).desc().limit(lim))
 
     async def get_top(self, ctx):
-        messages = models.MessageModel.select(models.MessageModel.author_id, models.MessageModel.message_content, 
-            models.MessageModel.attachment, models.MessageModel.server_id).where(models.MessageModel.server_id == ctx.guild.id)
-        voice_activities = activity_history = models.VoiceActivityModel.select(models.VoiceActivityModel.user_id, 
-                models.VoiceActivityModel.activity_minutes, models.VoiceActivityModel.guild_id)
+        messages = mem.select(mem.author_id, mem.message_content, 
+            mem.attachment, mem.server_id).where(mem.server_id == ctx.guild.id)
+        voice_activities = activity_history = vam.select(vam.user_id, 
+                vam.activity_minutes, vam.guild_id)
         authors = self.get_authors(messages)
         user_scores = {a: self.get_user_points(messages, voice_activities, ctx.guild.id, a) for a in authors}
         answer = await self.create_userscores_answer(user_scores)
         await ctx.channel.send(answer)
 
     def get_authors(self, messages):
-        authors_list = []
-        for msg in list(messages.objects()):
-            if msg.author_id not in authors_list:
-                authors_list.append(msg.author_id)
-        return authors_list
+        return list(set([msg.author_id for msg in messages.objects()]))
 
     def get_users_by_voice(self, voice_activities):
-        authors_list = []
-        for msg in list(voice_activities.objects()):
-            if msg.author_id not in authors_list:
-                authors_list.append(msg.user_id)
-        return authors_list
+        return list(set([va.author_id for va in voice_activities.objects()]))
 
     def get_user_points(self, messages, voice_activities, guild_id, author_id):
         user_points = 0.0

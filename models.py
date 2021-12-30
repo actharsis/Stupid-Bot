@@ -11,6 +11,7 @@ class MessageModel(Model):
     channel_id = CharField()
     message_content = CharField()
     attachment = IntegerField()
+    mention = BooleanField()
 
     class Meta:
         database = db
