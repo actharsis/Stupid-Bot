@@ -3,3 +3,8 @@ $StartTime - check bot's start time
 $Top - users' scores
 $Voice - show user's top by voice activity
 $Play
+
+$best {mode} {date} {limit} - get pixiv bests
+$recommended - get pixiv recommends
+$start - select channel for images
+$when - checks when next autopost will trigger

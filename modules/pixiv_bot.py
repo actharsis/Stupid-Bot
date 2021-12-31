@@ -112,9 +112,9 @@ class PixivCog(commands.Cog):
     @commands.command(name='when')
     async def time_to_update(self, ctx):
         if self.last_auto_update is None:
-            self.chat.send('autopost turned off')
-        delta = str(time.time() - self.last_auto_update)
-        self.chat.send(delta + ' secs remain before autopost')
+            await self.chat.send('timer has not started')
+        delta = str(int(PIXIV_AUTO_QUERY_DELAY + self.last_auto_update - time.time()))
+        await self.chat.send(delta + ' secs remain before autopost')
 
     @commands.Cog.listener()
     async def on_reaction_add(self, reaction, user):
