@@ -1,13 +1,16 @@
+from discord.message import Attachment
 import constants
 import discord
 import os, random
+import yt_dlp
+import asyncio
 from modules.message_analysis import Analysis_module
 from discord.ext import commands
 from config import settings
 from config import ydl_opts
 from datetime import datetime
-import yt_dlp
-import asyncio
+from discord_slash import SlashCommand, SlashContext
+from discord import Embed
 
 # misc init
 start_time = datetime.now()
@@ -82,7 +85,8 @@ async def reference_reaction(ctx):
 
 
 # client init
-client = commands.Bot(command_prefix=settings['prefix'], case_insensitive=True, help_command=None)
+client = commands.Bot(command_prefix=settings['prefix'], case_insensitive=True, help_command=None, intents=discord.Intents.all())
+slash = SlashCommand(client, sync_commands=True)
 analyzer = Analysis_module(client)
 
 
@@ -100,19 +104,22 @@ async def on_message(ctx):
     await client.process_commands(ctx)
 
 
-@client.command(name='Disconnect', pass_ctx=True)
-async def disconnect(ctx):
-    vc = ctx.message.guild.voice_client
+@slash.slash(name='Disconnect')
+async def disconnect(ctx: SlashContext):
+    await ctx.defer()
+    vc = ctx.guild.voice_client
     await vc.disconnect()
+    await ctx.send('disconnected')
 
 
-@client.command(pass_context=True)
-async def play(ctx, url):
-    if not ctx.message.author.voice:
+@slash.slash(name='Play')
+async def play(ctx: SlashContext, url):
+    await ctx.defer()
+    if not ctx.author.voice:
         await ctx.send('you are not connected to a voice channel')
         return
     else:
-        channel = ctx.message.author.voice.channel
+        channel = ctx.author.voice.channel
 
     voice = discord.utils.get(client.voice_clients, guild=ctx.guild)
 
@@ -130,40 +137,38 @@ async def play(ctx, url):
 
     while voice_client.is_playing():
         await asyncio.sleep(1)
-    else:
-        await voice_client.disconnect()
-        print("Disconnected")
+    await voice_client.disconnect()
+    print("Disconnected")
 
 
-@client.command(name='RenaStare')
-async def rena_stare(ctx):
-    await ctx.channel.send(file=discord.File(constants.GIF_DIRECTORY))
+@slash.slash(name='RenaStare')
+async def rena_stare(ctx: SlashContext):
+    await ctx.defer()
+    await ctx.send(file=discord.File(constants.GIF_DIRECTORY))
 
 
-@client.command(name='StartTime')
-async def send_start_time(ctx):
-    await ctx.channel.send('Bot working since ' + str(start_time.strftime('%b %d %Y %H:%M:%S') + ' UTC+03:00'))
+@slash.slash(name='StartTime')
+async def send_start_time(ctx: SlashContext):
+    embed = Embed(title='Bot working since ' + str(start_time.strftime('%b %d %Y %H:%M:%S') + ' UTC+03:00'))
+    await ctx.send(embed=embed)
 
 
-@client.command(name='HomoQuote')
-async def homoquote(ctx):
+@slash.slash(name='HomoQuote')
+async def homoquote(ctx: SlashContext):
+    await ctx.defer()
     random_file_name = random.choice(os.listdir(os.getcwd() + '/' + constants.HOMOQUOTES_IMG_DIRECTORY))
-    await ctx.channel.send(file=discord.File(constants.HOMOQUOTES_IMG_DIRECTORY + '/' + random_file_name))
+    await ctx.send(file=discord.File(constants.HOMOQUOTES_IMG_DIRECTORY + '/' + random_file_name))
 
 
-@client.command()
-async def help(ctx):
-    with open('help.txt') as help_file:
-        await ctx.channel.send('User commands:\n' + help_file.read())
-
-
-@client.command(name='Top')
-async def top(ctx):
+@slash.slash(name='Top')
+async def top(ctx: SlashContext):
+    await ctx.defer()
     await analyzer.get_top(ctx)
 
 
-@client.command(name='Voice')
-async def top(ctx):
+@slash.slash(name='Voice')
+async def top(ctx: SlashContext):
+    await ctx.defer()
     await analyzer.get_voice_activity(ctx)
 
 

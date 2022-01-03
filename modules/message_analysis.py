@@ -1,5 +1,6 @@
 import models
 import constants
+from discord import Embed
 from time import sleep
 from discord import ChannelType
 from threading import *
@@ -37,7 +38,9 @@ class Analysis_module:
         for activity in users_activity:
             answer += '#' + str(users_activity.index(activity) + 1) + ' ' + await self.fetch_user(activity['user_id']) + ' - ' + str(round(activity['activity'], 2)) + 'h' '\n'
         answer += '```'
-        await ctx.channel.send(answer)
+
+        embed = Embed(title='Voice activity', description=answer)
+        await ctx.send(embed=embed)
 
     def voice_activity_check(self):
         while True:
@@ -76,7 +79,10 @@ class Analysis_module:
         authors = self.get_authors(messages)
         user_scores = {a: self.get_user_points(messages, voice_activities, ctx.guild.id, a) for a in authors}
         answer = await self.create_userscores_answer(user_scores)
-        await ctx.channel.send(answer)
+
+        embed = Embed(title='Top', description=answer)
+        await ctx.send(embed=embed)
+        #await ctx.channel.send(answer)
 
     def get_authors(self, messages):
         authors_list = []

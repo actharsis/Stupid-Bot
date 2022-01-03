@@ -1,13 +1,17 @@
 import asyncio
 import datetime
-import discord
 import emoji
 import os
 import time
 
 from PIL import Image
 from constants import PIXIV_AUTO_QUERY_DELAY
+from discord import Embed, File
+from discord.colour import Colour
 from discord.ext import commands
+from discord_slash import cog_ext
+from discord_slash.utils.manage_commands import create_option, create_choice
+from discord_slash.model import SlashCommandOptionType
 from io import BytesIO
 from modules.pixiv_auth import get_refresh_token
 from pixivpy3 import *
@@ -55,8 +59,7 @@ class PixivCog(commands.Cog):
     async def show_page(self, query, limit=None, save_query=True):
         if self.chat is not None:
             if query.illusts is None:
-                await self.chat.send('Bad request')
-                return
+                return False
             for index, illust in enumerate(query.illusts):
                 if limit is not None and index == limit:
                     break
@@ -66,56 +69,108 @@ class PixivCog(commands.Cog):
                     img = self.api.download(illust.image_urls.large)
                     img.save(image_binary, 'PNG')
                     image_binary.seek(0)
-                    await self.chat.send('Title: ' + title, file=discord.File(fp=image_binary, filename=filename))
+                    await self.chat.send('Title: ' + title, file=File(fp=image_binary, filename=filename))
             if save_query:
                 self.last_query = query
+            return True
+        return False
+    
+    async def show_page_embed(self, query, limit=None, save_query=True):
+        success = await self.show_page(query, limit, save_query)
+        if success:
+            return Embed(title="Illustrations loaded", color=Colour.green())
+        else:
+            return Embed(title="Pixiv API can't process the request", color=Colour.red())
 
-    @commands.command(name='start')
+    @cog_ext.cog_slash(name="start", description="Select current channel as default for pixiv illustrations")
     async def start_pixiv(self, ctx):
         self.chat = ctx.channel
-        await ctx.send('Art channel selected')
+        embed = Embed(title="Art channel selected", color=Colour.green())
+        await ctx.send(embed=embed)
 
-    @commands.command(name='next')
-    async def next(self, ctx):
+    @cog_ext.cog_slash(name='next', description="Show next page from the last 'best' query",
+                        options=[
+                        create_option(
+                            name="limit",
+                            description="Amount of pictures will be displayed (default = 10)",
+                            option_type=SlashCommandOptionType.INTEGER,
+                            required=False,
+                        )])
+    async def next(self, ctx, limit=10):
+        await ctx.defer()
         if self.check_picture_channel(ctx) and self.last_query is not None:
             query = self.api.parse_qs(self.last_query.next_url)
-            await self.show_page(query)
+            embed = await self.show_page_embed(query, limit, save_query=True)
+        else:
+            embed = Embed(title="This channel is not defined as illustration channel", color=Colour.red())
+        await ctx.send(embed=embed, delete_after=5.0)
 
-    @commands.command(name='recommended')
-    async def recommended(self, ctx, *args):
-        limit = 10
+    @cog_ext.cog_slash(name='recommended', description="Show [10] recommended pixiv illustrations",
+                        options=[
+                        create_option(
+                            name="limit",
+                            description="Amount of pictures will be displayed (default = 10)",
+                            option_type=SlashCommandOptionType.INTEGER,
+                            required=False,
+                        )])
+    async def recommended(self, ctx, limit=10):
+        await ctx.defer()
         if self.check_picture_channel(ctx):
-            if len(args) >= 1:
-                limit = args[0]
+            limit = int(limit)
             query = self.api.illust_recommended()
-            await self.show_page(query, limit=limit, save_query=False)
+            embed = await self.show_page_embed(query, limit, save_query=False)
+        else:
+            embed = Embed(title="This channel is not defined as illustration channel", color=Colour.red())
+        await ctx.send(embed=embed, delete_after=5.0)
 
-    @commands.command(name='best')
-    async def best(self, ctx, *args):
-        limit = None
-        date = None
-        mode = 'week'
-        # date: '2016-08-01'
-        # mode: [day, week, month, day_male, day_female, week_original, week_rookie,
-        #               day_r18, day_male_r18, day_female_r18, week_r18, week_r18g]
+    @cog_ext.cog_slash(name='best', description='Find best [10] rated illutstrations with specific mode and date',
+                        options=[
+                        create_option(
+                            name="mode",
+                            description="Specify one of the types",
+                            option_type=SlashCommandOptionType.STRING,
+                            required=False,
+                            choices=[
+                                create_choice("day", "Day"),
+                                create_choice("week", "Week"),
+                                create_choice("month", "Month"),
+                                create_choice("day_male", "Day Male likes"),
+                                create_choice("day_female", "Day Female likes"),
+                                create_choice("day_r18", "Day Ecchi"),
+                                create_choice("day_male_r18", "Day Male likes Ecchi"),
+                                create_choice("week_r18", "Week Ecchi"),
+                            ]
+                        ),
+                        create_option(
+                            name="limit",
+                            description="Amount of pictures will be displayed (default = 10)",
+                            option_type=SlashCommandOptionType.INTEGER,
+                            required=False
+                        ),
+                        create_option(
+                            name="date",
+                            description="Date of sample in format: YYYY-MM-DD",
+                            option_type=SlashCommandOptionType.STRING,
+                            required=False
+                        )
+                        ])
+    async def best(self, ctx, mode='month', limit=10, date=None):
+        await ctx.defer()
         if self.check_picture_channel(ctx):
-            for arg in args:
-                if arg.isnumeric():
-                    limit = int(arg)
-                elif is_date(arg):
-                    date = arg
-                else:
-                    mode = arg
             query = self.api.illust_ranking(mode=mode, date=date, offset=None)
-            await self.show_page(query, limit=limit, save_query=True)
+            embed = await self.show_page_embed(query, limit, save_query=True)
+        else:
+            embed = Embed(title="This channel is not defined as illustration channel", color=Colour.red())
+        await ctx.send(embed=embed, delete_after=5.0)
 
-    @commands.command(name='when')
+    @cog_ext.cog_slash(name='when', description='Show remaining time until new illustrations')
     async def time_to_update(self, ctx):
         if self.last_auto_update is None:
-            await ctx.send('timer has not started')
-            return
-        delta = str(int(PIXIV_AUTO_QUERY_DELAY + self.last_auto_update - time.time()))
-        await self.chat.send(str(delta) + ' secs remain before autopost')
+            embed = Embed(title="timer has not started", color=Colour.gold())
+        else:
+            delta = str(int(PIXIV_AUTO_QUERY_DELAY + self.last_auto_update - time.time()))
+            embed = Embed(title=str(delta) + ' secs remain before autopost', color=Colour.green())
+        await ctx.send(embed=embed, delete_after=10.0)
 
     @commands.Cog.listener()
     async def on_reaction_add(self, reaction, user):
