@@ -230,7 +230,7 @@ class PixivCog(commands.Cog):
             timestamp = time.time()
             if self.last_auto_update is None or timestamp - self.last_auto_update > PIXIV_AUTO_QUERY_DELAY:
                 query = self.api.illust_recommended()
-                await self.show_page(query, limit=1)
+                await self.show_page(query, limit=20)
                 self.last_auto_update = timestamp
 
     async def auto_refresh_token(self):
