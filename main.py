@@ -1,4 +1,3 @@
-from discord.message import Attachment
 import constants
 import discord
 import os, random
@@ -85,7 +84,7 @@ async def reference_reaction(ctx):
 
 
 # client init
-client = commands.Bot(command_prefix=settings['prefix'], case_insensitive=True, help_command=None, intents=discord.Intents.all())
+client = commands.Bot(command_prefix="$", intents=discord.Intents.all())
 slash = SlashCommand(client, sync_commands=True)
 analyzer = Analysis_module(client)
 
