@@ -253,15 +253,18 @@ class PixivCog(commands.Cog):
             date = random_date('2017-01-01', current_date(), random.random())
             counter = 0
             offset = 0
+            fetched = 0
             alive = True
             while counter < limit and alive:
                 query = self.api.search_illust(base64.b64decode('6KqV55Sf5pel').decode("utf-8"),
-                                               sort='date_asc', start_date=date, offset=offset)
-                shown, alive = await self.show_page(query, ctx.channel, limit, min_views, min_rate)
+                                               sort='date_asc', end_date=date, offset=offset)
+                shown, alive = await self.show_page(query, ctx.channel, limit - counter, min_views, min_rate)
                 counter += shown
+                fetched += 30
                 if alive:
                     offset += len(query.illusts)
-            embed = Embed(title="Secret feature called", color=Colour.green())
+            embed = Embed(title="Secret feature called", description="Fetched " + str(fetched) + " images in total",
+                          color=Colour.green())
         else:
             embed = Embed(title="You can't use this query", color=Colour.red())
         await ctx.send(embed=embed, delete_after=10.0)
