@@ -84,7 +84,7 @@ async def reference_reaction(ctx):
 
 
 # client init
-client = commands.Bot(intents=discord.Intents.all())
+client = commands.Bot(prefix='123', intents=discord.Intents.all())
 slash = SlashCommand(client, sync_commands=True)
 analyzer = Analysis_module(client)
 
