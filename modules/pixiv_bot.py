@@ -309,10 +309,9 @@ class PixivCog(commands.Cog):
                         msg += tag.name + ', '
                     msg = msg[:-2]
                     await reaction.message.reply(msg, delete_after=30.0)
-        else:
-            if demojized == ':broken_heart:' or demojized == ':thumbs_up:':
-                await asyncio.sleep(5)
-                await reaction.remove(user)
+        elif demojized in [':broken_heart:', ':thumbs_up:']:
+            await asyncio.sleep(5)
+            await reaction.remove(user)
 
     async def auto_draw(self):
         try:

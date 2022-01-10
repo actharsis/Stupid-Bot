@@ -82,7 +82,6 @@ class Analysis_module:
 
         embed = Embed(title='Top', description=answer)
         await ctx.send(embed=embed)
-        #await ctx.channel.send(answer)
 
     def get_authors(self, messages):
         authors_list = []
