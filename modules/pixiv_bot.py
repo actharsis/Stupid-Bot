@@ -87,8 +87,8 @@ class PixivCog(commands.Cog):
             pass
 
     async def show_page(self, query, channel, limit=30, minimum_views=None, minimum_rate=None):
-        if channel is None or query.illusts is None:
-            return 0, False
+        if channel is None or query.illusts is None or len(query.illusts) == 0:
+            return 0, 0, False
         shown = 0
         print('fetched', len(query.illusts), 'images')
         for illust in query.illusts:
@@ -108,10 +108,10 @@ class PixivCog(commands.Cog):
                 shown += 1
             if illust.is_bookmarked:
                 await message.add_reaction(emoji.emojize(':red_heart:'))
-        return shown, True
+        return shown, len(query.illusts), True
 
     async def show_page_embed(self, query, query_type, chat, limit=None, save_query=True):
-        shown, result = await self.show_page(query, chat, limit)
+        shown, total, result = await self.show_page(query, chat, limit)
         if result:
             if save_query:
                 self.last_query = query
@@ -243,30 +243,59 @@ class PixivCog(commands.Cog):
             embed = Embed(title="Timer has not started", color=Colour.gold())
         await ctx.send(embed=embed, delete_after=10.0)
 
-    @cog_ext.cog_slash(name='secret', description='???')
-    async def test_feature(self, ctx):
+    @cog_ext.cog_slash(name='find', description='Find illustrations that satisfy the filters',
+                       options=[
+                           create_option(
+                               name="word",
+                               description="Find by specific word (default = 猫耳)",
+                               option_type=SlashCommandOptionType.STRING,
+                               required=False,
+                           ),
+                           create_option(
+                               name="match",
+                               description="Word match rule (default = exact_match_for_tags)",
+                               option_type=SlashCommandOptionType.STRING,
+                               required=False,
+                               choices=[
+                                   create_choice("partial_match_for_tags", "Partial match for tags"),
+                                   create_choice("exact_match_for_tags", "Exact match for tags"),
+                                   create_choice("title_and_caption", "Title and caption")
+                               ]
+                           ),
+                           create_option(
+                               name="limit",
+                               description="Maximum amount of pictures that will be shown (default 5, maximum = 10)",
+                               option_type=SlashCommandOptionType.INTEGER,
+                               required=False,
+                           ),
+                           create_option(
+                               name="views",
+                               description="Required minimum amount of views (default = 3500)",
+                               option_type=SlashCommandOptionType.INTEGER,
+                               required=False,
+                           ),
+                           create_option(
+                               name="rate",
+                               description="Required minimum percent of views/bookmarks (default = 15)",
+                               option_type=SlashCommandOptionType.FLOAT,
+                               required=False,
+                           )])
+    async def find(self, ctx, word='猫耳', match='exact_match_for_tags', limit=5, views=3500, rate=15.0):
         await ctx.defer()
-        if ctx.author_id == 360641399713955843:
-            limit = 5
-            min_views = 4000
-            min_rate = 15.0
-            date = random_date('2017-01-01', current_date(), random.random())
-            counter = 0
-            offset = 0
-            fetched = 0
-            alive = True
-            while counter < limit and alive:
-                query = self.api.search_illust(base64.b64decode('6KqV55Sf5pel').decode("utf-8"),
-                                               sort='date_asc', end_date=date, offset=offset)
-                shown, alive = await self.show_page(query, ctx.channel, limit - counter, min_views, min_rate)
-                counter += shown
-                fetched += 30
-                if alive:
-                    offset += len(query.illusts)
-            embed = Embed(title="Secret feature called", description="Fetched " + str(fetched) + " images in total",
-                          color=Colour.green())
-        else:
-            embed = Embed(title="You can't use this query", color=Colour.red())
+        limit = min(limit, 10)
+        date = random_date('2017-01-01', current_date(), random.random())
+        fetched, shown, offset, alive = 0, 0, 0, True
+        while shown < limit and alive and fetched < 3000:
+            query = self.api.search_illust(word, search_target=match,
+                                           sort='date_asc', end_date=date, offset=offset)
+            good, total, alive = await self.show_page(query, ctx.channel, limit - shown, views, rate)
+            shown += good
+            fetched += total
+            if alive:
+                offset += len(query.illusts)
+        embed = Embed(title="Find with word " + word + " called",
+                      description=str(fetched) + " images fetched in total",
+                      color=Colour.green())
         await ctx.send(embed=embed, delete_after=10.0)
 
     @commands.Cog.listener()
