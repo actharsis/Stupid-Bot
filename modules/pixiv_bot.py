@@ -23,7 +23,7 @@ def is_date(date_text):
     try:
         datetime.datetime.strptime(date_text, '%Y-%m-%d')
         return True
-    except ValueError:
+    except (ValueError, TypeError):
         return False
 
 
@@ -40,6 +40,12 @@ def random_date(start, end, prop):
 
 def current_date():
     return time.strftime('%Y-%m-%d', time.localtime(time.time()))
+
+
+def next_year(date, time_format):
+    ptime = time.mktime(time.strptime(date, time_format))
+    ptime += 31536000
+    return time.strftime(time_format, time.localtime(ptime))
 
 
 def read_pixiv_refresh_token():
@@ -242,7 +248,7 @@ class PixivCog(commands.Cog):
             embed = Embed(title="Timer has not started", color=Colour.gold())
         await ctx.send(embed=embed, delete_after=10.0)
 
-    @cog_ext.cog_slash(name='find', description='Find illustrations that satisfy the filters',
+    @cog_ext.cog_slash(name='find', description='Find illustrations that satisfy the filters from random point of time',
                        options=[
                            create_option(
                                name="word",
@@ -252,7 +258,7 @@ class PixivCog(commands.Cog):
                            ),
                            create_option(
                                name="match",
-                               description="Word match rule (default = exact_match_for_tags)",
+                               description="Word match rule (default = partial_match_for_tags)",
                                option_type=SlashCommandOptionType.STRING,
                                required=False,
                                choices=[
@@ -275,30 +281,36 @@ class PixivCog(commands.Cog):
                            ),
                            create_option(
                                name="rate",
-                               description="Required minimum percent of views/bookmarks (default = 15)",
+                               description="Required minimum percent of views/bookmarks (default = 3)",
                                option_type=SlashCommandOptionType.FLOAT,
                                required=False,
                            ),
                            create_option(
-                               name="min_date",
-                               description="Minimum date YYYY-MM-DD that can be randomly picked (default = 2009-01-01)",
+                               name="since_date",
+                               description="Fixed date in format YYYY-MM-DD from which search will be initialized",
                                option_type=SlashCommandOptionType.STRING,
                                required=False,
                            )])
-    async def find(self, ctx, word='猫耳', match='exact_match_for_tags',
-                   limit=5, views=3500, rate=15.0, min_date='2009-01-01'):
+    async def find(self, ctx, word='猫耳', match='partial_match_for_tags',
+                   limit=5, views=3500, rate=3.0, since_date=None):
         await ctx.defer()
         limit = min(limit, 10)
-        date = random_date(min_date, current_date(), random.random())
+        date = random_date('2009-01-01', current_date(), random.random())
+        if is_date(since_date):
+            date = since_date
         fetched, shown, offset, alive = 0, 0, 0, True
         while shown < limit and alive and fetched < 3000:
             query = self.api.search_illust(word, search_target=match,
-                                           sort='date_asc', end_date=date, offset=offset)
+                                           end_date=date, offset=offset)
+            if len(query.illusts) == 0 and date < current_date():
+                date = next_year(date, '%Y-%m-%d')
+                offset = 0
+                continue
             good, total, alive = await self.show_page(query, ctx.channel, limit - shown, views, rate)
             shown += good
             fetched += total
             if alive:
-                offset += len(query.illusts)
+                offset += total
         embed = Embed(title="Find with word " + word + " called",
                       description=str(fetched) + " images fetched in total",
                       color=Colour.green())
