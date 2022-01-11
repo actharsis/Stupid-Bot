@@ -1,5 +1,4 @@
 import asyncio
-import base64
 import datetime
 import emoji
 import json
@@ -257,9 +256,9 @@ class PixivCog(commands.Cog):
                                option_type=SlashCommandOptionType.STRING,
                                required=False,
                                choices=[
-                                   create_choice("partial_match_for_tags", "Partial match for tags"),
-                                   create_choice("exact_match_for_tags", "Exact match for tags"),
-                                   create_choice("title_and_caption", "Title and caption")
+                                   create_choice("partial_match_for_tags", "partial_match_for_tags"),
+                                   create_choice("exact_match_for_tags", "exact_match_for_tags"),
+                                   create_choice("title_and_caption", "title_and_caption")
                                ]
                            ),
                            create_option(
@@ -279,11 +278,18 @@ class PixivCog(commands.Cog):
                                description="Required minimum percent of views/bookmarks (default = 15)",
                                option_type=SlashCommandOptionType.FLOAT,
                                required=False,
+                           ),
+                           create_option(
+                               name="min_date",
+                               description="Minimum date YYYY-MM-DD that can be randomly picked (default = 2009-01-01)",
+                               option_type=SlashCommandOptionType.STRING,
+                               required=False,
                            )])
-    async def find(self, ctx, word='猫耳', match='exact_match_for_tags', limit=5, views=3500, rate=15.0):
+    async def find(self, ctx, word='猫耳', match='exact_match_for_tags',
+                   limit=5, views=3500, rate=15.0, min_date='2009-01-01'):
         await ctx.defer()
         limit = min(limit, 10)
-        date = random_date('2017-01-01', current_date(), random.random())
+        date = random_date(min_date, current_date(), random.random())
         fetched, shown, offset, alive = 0, 0, 0, True
         while shown < limit and alive and fetched < 3000:
             query = self.api.search_illust(word, search_target=match,
