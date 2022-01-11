@@ -60,6 +60,14 @@ class BetterAppPixivAPI(AppPixivAPI):
         with self.requests_call('GET', url, headers={'Referer': referer}, stream=True) as response:
             return Image.open(response.raw)
 
+    def search_autocomplete(self, word, req_auth=True):
+        url = '%s/v2/search/autocomplete' % self.hosts
+        params = {
+            'word': word,
+        }
+        r = self.no_auth_requests_call('GET', url, params=params, req_auth=req_auth)
+        return self.parse_result(r)
+
 
 class PixivCog(commands.Cog):
     api = BetterAppPixivAPI()
@@ -248,6 +256,27 @@ class PixivCog(commands.Cog):
             embed = Embed(title="Timer has not started", color=Colour.gold())
         await ctx.send(embed=embed, delete_after=10.0)
 
+    @cog_ext.cog_slash(name='tag', description='Get tagged name of word',
+                       options=[
+                           create_option(
+                               name="word",
+                               description="Word, that will be translated to most popular related tag",
+                               option_type=SlashCommandOptionType.STRING,
+                               required=True
+                           )
+                       ])
+    async def tag(self, ctx, word):
+        query = self.api.search_autocomplete(word)
+        tags = ''
+        for i, tag in enumerate(query.tags):
+            tags += str(i) + '. ' + tag.name
+            if tag.translated_name is not None:
+                tags += ' - ' + tag.translated_name
+            tags += '\n'
+        embed = Embed(title="Tags on query " + query + " sorted from high to low popularity:",
+                      description=tags, color=Colour.gold())
+        await ctx.send(embed=embed, delete_after=30.0)
+
     @cog_ext.cog_slash(name='find', description='Find illustrations that satisfy the filters from random point of time',
                        options=[
                            create_option(
@@ -294,6 +323,10 @@ class PixivCog(commands.Cog):
     async def find(self, ctx, word='猫耳', match='partial_match_for_tags',
                    limit=5, views=3500, rate=3.0, since_date=None):
         await ctx.defer()
+        try:
+            word = self.api.search_autocomplete(word).tags[0].name
+        except:
+            pass
         limit = min(limit, 10)
         date = random_date('2009-01-01', current_date(), random.random())
         if is_date(since_date):
