@@ -273,7 +273,7 @@ class PixivCog(commands.Cog):
             if tag.translated_name is not None:
                 tags += ' - ' + tag.translated_name
             tags += '\n'
-        embed = Embed(title="Tags on query " + query + " sorted from high to low popularity:",
+        embed = Embed(title="Tags on word '" + word + "' sorted from high to low popularity:",
                       description=tags, color=Colour.gold())
         await ctx.send(embed=embed, delete_after=30.0)
 
