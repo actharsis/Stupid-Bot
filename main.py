@@ -1,12 +1,10 @@
 import constants
 import discord
-import os, random
-import yt_dlp
-import asyncio
+import os
+import random
 from modules.message_analysis import Analysis_module
 from discord.ext import commands
 from config import settings
-from config import ydl_opts
 from datetime import datetime
 from discord_slash import SlashCommand, SlashContext
 from discord import Embed
@@ -28,11 +26,6 @@ if len(lines) > 0:
     for p in pairs:
         p[1] = p[1].split(";")
     replies = {int(p[0]): p[1] for p in pairs}
-
-
-# functions
-def endSong(guild, path):
-    os.remove(path)
 
 
 def get_special_replies(author_id):
@@ -103,43 +96,6 @@ async def on_message(ctx):
     await client.process_commands(ctx)
 
 
-@slash.slash(name='Disconnect')
-async def disconnect(ctx: SlashContext):
-    await ctx.defer()
-    vc = ctx.guild.voice_client
-    await vc.disconnect()
-    await ctx.send('disconnected')
-
-
-@slash.slash(name='Play')
-async def play(ctx: SlashContext, url):
-    await ctx.defer()
-    if not ctx.author.voice:
-        await ctx.send('you are not connected to a voice channel')
-        return
-    else:
-        channel = ctx.author.voice.channel
-
-    voice = discord.utils.get(client.voice_clients, guild=ctx.guild)
-
-    if voice is None:
-        voice_client = await channel.connect()
-
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        file = ydl.extract_info(url, download=True)
-        path = str(file['title']) + " [" + str(file['id'] + "].mp3")
-
-    voice_client.play(discord.FFmpegPCMAudio(path), after=lambda x: endSong(ctx.message.guild, path))
-    voice_client.source = discord.PCMVolumeTransformer(voice_client.source, 1)
-
-    await ctx.send(f'**Music: **{url}')
-
-    while voice_client.is_playing():
-        await asyncio.sleep(1)
-    await voice_client.disconnect()
-    print("Disconnected")
-
-
 @slash.slash(name='RenaStare')
 async def rena_stare(ctx: SlashContext):
     await ctx.defer()
@@ -171,7 +127,7 @@ async def top(ctx: SlashContext):
     await analyzer.get_voice_activity(ctx)
 
 
-initial_extensions = ['modules.pixiv_bot']
+initial_extensions = ['modules.pixiv_bot', 'modules.music_player_bot']
 
 for extension in initial_extensions:
     client.load_extension(extension)
