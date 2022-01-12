@@ -86,7 +86,7 @@ class MusicPlayerCog(commands.Cog):
             await ctx.send(embed=Embed(title="Song '" + song['title'] + "' added to queue", color=Colour.green()),
                            delete_after=5.0)
             self.queue.append({
-                'song': {'title': song['title'], 'id': song['id'], 'duration': song['duration'], 'url': song['url']},
+                'song': {'title': song['title'], 'id': song['id'], 'duration': song['duration'], 'url': url},
                 'channel': channel,
                 'ctx': ctx
             })
