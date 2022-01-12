@@ -120,10 +120,13 @@ class MusicPlayerCog(commands.Cog):
 
     @cog_ext.cog_slash(name='stfu', description='Stop current song and clear song queue')
     async def show_queue(self, ctx):
-        self.queue.clear()
-        self.voice_client.stop()
-        await ctx.send(embed=Embed(title="Queue cleared", color=Colour.blurple()),
-                       delete_after=5.0)
+        if self.voice_client is not None:
+            self.queue.clear()
+            self.voice_client.stop()
+            embed = Embed(title="Ok", color=Colour.blurple())
+        else:
+            embed = Embed(title="I've been quiet enough", color=Colour.blurple())
+        await ctx.send(embed=embed, delete_after=5.0)
 
     @cog_ext.cog_slash(name='pop_song', description='Delete specific song from queue by index',
                        options=[
@@ -142,7 +145,7 @@ class MusicPlayerCog(commands.Cog):
             embed = Embed(title="Wrong index given", color=Colour.red())
         await ctx.send(embed=embed, delete_after=5.0)
 
-    @cog_ext.cog_slash(name='skip')
+    @cog_ext.cog_slash(name='skip', description='Skip current song')
     async def skip(self, ctx):
         await ctx.defer()
         if self.voice_client is not None:
@@ -152,7 +155,7 @@ class MusicPlayerCog(commands.Cog):
             embed = Embed(title="Nothing playing at this moment", color=Colour.gold())
         await ctx.send(embed=embed, delete_after=5.0)
 
-    @cog_ext.cog_slash(name='pause')
+    @cog_ext.cog_slash(name='pause', description='Pause current song')
     async def pause(self, ctx):
         await ctx.defer()
         if self.voice_client is not None and self.voice_client.is_playing():
@@ -162,7 +165,7 @@ class MusicPlayerCog(commands.Cog):
             embed = Embed(title="Nothing to pause", color=Colour.gold())
         await ctx.send(embed=embed, delete_after=5.0)
 
-    @cog_ext.cog_slash(name='resume')
+    @cog_ext.cog_slash(name='resume', description='Resume current song')
     async def resume(self, ctx):
         await ctx.defer()
         if self.voice_client is not None and self.voice_client.is_paused():
