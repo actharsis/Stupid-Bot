@@ -108,7 +108,7 @@ class MusicPlayerCog(commands.Cog):
         await ctx.defer()
         server_id = ctx.guild.id
         text = ""
-        for i, item in enumerate(self.voice_clients[server_id]):
+        for i, item in enumerate(self.guilds[server_id]):
             text += str(i) + '. ' + item['song']['title'] + '\n'
         if len(self.guilds[server_id]) == 0:
             text = "Empty"
