@@ -43,7 +43,7 @@ class MusicPlayerCog(commands.Cog):
             await self.join_vc(self.queue[0]['channel'])
             return True
         if len(self.queue) == 0 and self.voice_client is not None:
-            await self.voice_client.disconnect()
+            self.voice_client.disconnect()
         return False
 
     async def play(self):
@@ -146,7 +146,7 @@ class MusicPlayerCog(commands.Cog):
     async def skip(self, ctx):
         await ctx.defer()
         if self.voice_client is not None:
-            await self.voice_client.stop()
+            self.voice_client.stop()
             embed = Embed(title="Current track skipped", color=Colour.gold())
         else:
             embed = Embed(title="Nothing playing at this moment", color=Colour.gold())
