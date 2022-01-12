@@ -55,7 +55,8 @@ class MusicPlayerCog(commands.Cog):
                                    color=Colour.dark_red()),
                        delete_after=int(song['duration']))
 
-        os.remove(song_cache)
+        if os.path.isfile(song_cache):
+            os.remove(song_cache)
         yt_dlp.YoutubeDL(ydl_opts).extract_info(song['url'], download=True)
 
         self.voice_client.play(discord.FFmpegPCMAudio(song_cache))
@@ -130,9 +131,9 @@ class MusicPlayerCog(commands.Cog):
                            )
                        ])
     async def pop_song(self, ctx, idx):
-        if idx < 0 or idx > len(self.queue):
+        if idx >= 0 or idx < len(self.queue):
             title = self.queue.pop(idx)['song']['title']
-            embed = Embed(title="Song with name: " + title + " was deleted", color=Colour.blurple())
+            embed = Embed(title="Song: " + title + " was deleted", color=Colour.blurple())
         else:
             embed = Embed(title="Wrong index given", color=Colour.red())
         await ctx.send(embed=embed, delete_after=5.0)
