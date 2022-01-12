@@ -1,7 +1,8 @@
 settings = {
-    'token': '',
-    'prefix': '$'
+    'token': ''
 }
+
+song_cache = "song_cache.mp3"
 
 ydl_opts = {
     'format': 'bestaudio/best',
@@ -10,4 +11,6 @@ ydl_opts = {
         'preferredcodec': 'mp3',
         'preferredquality': '192',
     }],
+    'outtmpl': song_cache,
+    'noplaylist': True
 }

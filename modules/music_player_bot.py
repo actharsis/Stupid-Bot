@@ -3,17 +3,13 @@ import discord
 import os
 import yt_dlp
 
-from config import ydl_opts
+from config import song_cache, ydl_opts
 from discord import Embed
 from discord.colour import Colour
 from discord.ext import commands
 from discord_slash import cog_ext
 from discord_slash.model import SlashCommandOptionType
 from discord_slash.utils.manage_commands import create_option
-
-
-def delete_song(path):
-    os.remove(path)
 
 
 def time_to_str(time):
@@ -59,11 +55,10 @@ class MusicPlayerCog(commands.Cog):
                                    color=Colour.dark_red()),
                        delete_after=int(song['duration']))
 
-        path = get_song_path(song)
-        if not os.path.isfile(path):
-            yt_dlp.YoutubeDL(ydl_opts).extract_info(song['url'], download=True)
+        os.remove(song_cache)
+        yt_dlp.YoutubeDL(ydl_opts).extract_info(song['url'], download=True)
 
-        self.voice_client.play(discord.FFmpegPCMAudio(get_song_path(song)))
+        self.voice_client.play(discord.FFmpegPCMAudio(song_cache))
         self.voice_client.source = discord.PCMVolumeTransformer(self.voice_client.source, 1)
 
         while self.voice_client.is_playing() or self.voice_client.is_paused():
@@ -85,10 +80,7 @@ class MusicPlayerCog(commands.Cog):
             await ctx.send('you are not connected to a voice channel')
             return
         try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                song = ydl.extract_info(url, download=False)
-                if not os.path.isfile(get_song_path(song)):
-                    ydl.extract_info(url, download=True)
+            song = yt_dlp.YoutubeDL(ydl_opts).extract_info(url, download=False)
             channel = ctx.author.voice.channel
             await ctx.send(embed=Embed(title="Song '" + song['title'] + "' added to queue", color=Colour.green()),
                            delete_after=5.0)
@@ -113,13 +105,13 @@ class MusicPlayerCog(commands.Cog):
                        delete_after=30.0)
 
     @cog_ext.cog_slash(name='clear', description='Clear song queue')
-    async def show_queue(self, ctx):
+    async def clear_queue(self, ctx):
         self.queue.clear()
         await ctx.send(embed=Embed(title="Queue cleared", color=Colour.blurple()),
                        delete_after=5.0)
 
     @cog_ext.cog_slash(name='stfu', description='Stop current song and clear song queue')
-    async def show_queue(self, ctx):
+    async def disconnect(self, ctx):
         if self.voice_client is not None:
             self.queue.clear()
             self.voice_client.stop()
