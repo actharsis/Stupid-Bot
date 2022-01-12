@@ -127,7 +127,7 @@ async def top(ctx: SlashContext):
     await analyzer.get_voice_activity(ctx)
 
 
-initial_extensions = ['modules.pixiv_bot', 'modules.music_player_bot']
+initial_extensions = ['modules.pixiv_bot', 'modules.music_player_bot', 'modules.pidor_bot']
 
 for extension in initial_extensions:
     client.load_extension(extension)
