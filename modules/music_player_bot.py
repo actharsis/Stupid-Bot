@@ -30,7 +30,8 @@ class MusicPlayerCog(commands.Cog):
         if server_id not in self.voice_clients.keys():
             self.voice_clients[server_id] = await channel.connect()
         elif self.voice_clients[server_id].channel != channel:
-            self.voice_clients[server_id] = await self.voice_clients[server_id].disconnect()
+            await self.voice_clients[server_id].disconnect()
+            self.voice_clients.pop(server_id)
             self.voice_clients[server_id] = await channel.connect()
 
     async def is_ready(self, server_id):
@@ -39,7 +40,8 @@ class MusicPlayerCog(commands.Cog):
             await self.join_vc(server_id, self.guilds[server_id][0]['channel'])
             return True
         if len(self.guilds[server_id]) == 0 and server_id in self.voice_clients.keys():
-            self.voice_clients[server_id] = await self.voice_clients[server_id].disconnect()
+            await self.voice_clients[server_id].disconnect()
+            self.voice_clients.pop(server_id)
         return False
 
     async def play(self, server_id):
