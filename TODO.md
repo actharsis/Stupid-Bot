@@ -15,4 +15,3 @@
 
 BUGS:
 > - When bot join server commands Voice and Top returns ```. It caused by no rows in tables for this server.
-> - Songs with ' crashing
