@@ -3,7 +3,7 @@ import discord
 import os
 import yt_dlp
 
-from config import song_cache, ydl_opts
+from config import ydl_opts
 from discord import Embed
 from discord.colour import Colour
 from discord.ext import commands
@@ -23,30 +23,30 @@ def get_song_path(song):
 class MusicPlayerCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.queue = []
-        self.voice = None
-        self.voice_client = None
+        self.guilds = {}
+        self.voice_clients = {}
 
-    async def join_vc(self, channel):
-        if self.voice_client is None:
-            self.voice_client = await channel.connect()
-        elif self.voice_client.channel != channel:
-            self.voice_client = await self.voice_client.disconnect()
-            self.voice_client = await channel.connect()
+    async def join_vc(self, server_id, channel):
+        if server_id not in self.voice_clients.keys():
+            self.voice_clients[server_id] = await channel.connect()
+        elif self.voice_clients[server_id].channel != channel:
+            self.voice_clients[server_id] = await self.voice_clients[server_id].disconnect()
+            self.voice_clients[server_id] = await channel.connect()
 
-    async def is_ready(self):
-        if self.voice_client is None or not self.voice_client.is_playing() and len(self.queue) > 0:
-            await self.join_vc(self.queue[0]['channel'])
+    async def is_ready(self, server_id):
+        if server_id not in self.voice_clients.keys() \
+                or not self.voice_clients[server_id].is_playing() and len(self.guilds[server_id]) > 0:
+            await self.join_vc(server_id, self.guilds[server_id][0]['channel'])
             return True
-        if len(self.queue) == 0 and self.voice_client is not None:
-            self.voice_client = await self.voice_client.disconnect()
+        if len(self.guilds[server_id]) == 0 and server_id in self.voice_clients.keys():
+            self.voice_clients[server_id] = await self.voice_clients[server_id].disconnect()
         return False
 
-    async def play(self):
-        if not await self.is_ready():
+    async def play(self, server_id):
+        if not await self.is_ready(server_id):
             return
 
-        item = self.queue.pop(0)
+        item = self.guilds[server_id].pop(0)
         song = item['song']
         ctx = item['ctx']
 
@@ -55,16 +55,20 @@ class MusicPlayerCog(commands.Cog):
                                    color=Colour.dark_red()),
                        delete_after=int(song['duration']))
 
-        if os.path.isfile(song_cache):
-            os.remove(song_cache)
-        yt_dlp.YoutubeDL(ydl_opts).extract_info(song['url'], download=True)
+        options = ydl_opts
+        path = str(server_id) + '.mp3'
+        options['outtmpl'] = path
+        if os.path.isfile(path):
+            os.remove(path)
+        yt_dlp.YoutubeDL(options).extract_info(song['url'], download=True)
 
-        self.voice_client.play(discord.FFmpegPCMAudio(song_cache))
-        self.voice_client.source = discord.PCMVolumeTransformer(self.voice_client.source, 1)
+        self.voice_clients[server_id].play(discord.FFmpegPCMAudio(path))
+        self.voice_clients[server_id].source = \
+            discord.PCMVolumeTransformer(self.voice_clients[server_id].source, 1)
 
-        while self.voice_client.is_playing() or self.voice_client.is_paused():
+        while self.voice_clients[server_id].is_playing() or self.voice_clients[server_id].is_paused():
             await asyncio.sleep(1)
-        await self.play()
+        await self.play(server_id)
 
     @cog_ext.cog_slash(name='play', description='Play a song from Youtube URL',
                        options=[
@@ -81,41 +85,47 @@ class MusicPlayerCog(commands.Cog):
             await ctx.send('you are not connected to a voice channel')
             return
         try:
+            server_id = ctx.guild.id
             song = yt_dlp.YoutubeDL(ydl_opts).extract_info(url, download=False)
             channel = ctx.author.voice.channel
             await ctx.send(embed=Embed(title="Song '" + song['title'] + "' added to queue", color=Colour.green()),
                            delete_after=5.0)
-            self.queue.append({
+            if server_id not in self.guilds.keys():
+                self.guilds[server_id] = []
+            self.guilds[server_id].append({
                 'song': {'title': song['title'], 'id': song['id'], 'duration': song['duration'], 'url': url},
                 'channel': channel,
                 'ctx': ctx
             })
-            await self.play()
+            await self.play(server_id)
         except:
             await ctx.send(embed=Embed(title="YT DL error", color=Colour.red()), delete_after=5.0)
 
     @cog_ext.cog_slash(name='queue', description='Show current song queue')
     async def show_queue(self, ctx):
         await ctx.defer()
+        server_id = ctx.guild.id
         text = ""
-        for i, item in enumerate(self.queue):
+        for i, item in enumerate(self.voice_clients[server_id]):
             text += str(i) + '. ' + item['song']['title'] + '\n'
-        if len(self.queue) == 0:
+        if len(self.guilds[server_id]) == 0:
             text = "Empty"
         await ctx.send(embed=Embed(title="Queue:", description=text, color=Colour.blurple()),
                        delete_after=30.0)
 
     @cog_ext.cog_slash(name='clear', description='Clear song queue')
     async def clear_queue(self, ctx):
-        self.queue.clear()
+        server_id = ctx.guild.id
+        self.guilds[server_id].clear()
         await ctx.send(embed=Embed(title="Queue cleared", color=Colour.blurple()),
                        delete_after=5.0)
 
     @cog_ext.cog_slash(name='stfu', description='Stop current song and clear song queue')
     async def disconnect(self, ctx):
-        if self.voice_client is not None:
-            self.queue.clear()
-            self.voice_client.stop()
+        server_id = ctx.guild.id
+        if server_id in self.voice_clients.keys():
+            self.guilds[server_id].clear()
+            self.voice_clients[server_id].stop()
             embed = Embed(title="Ok", color=Colour.blurple())
         else:
             embed = Embed(title="I've been quiet enough", color=Colour.blurple())
@@ -131,8 +141,9 @@ class MusicPlayerCog(commands.Cog):
                            )
                        ])
     async def pop_song(self, ctx, idx):
-        if idx >= 0 or idx < len(self.queue):
-            title = self.queue.pop(idx)['song']['title']
+        server_id = ctx.guild.id
+        if idx >= 0 or idx < len(self.guilds[server_id]):
+            title = self.guilds[server_id].pop(idx)['song']['title']
             embed = Embed(title="Song: " + title + " was deleted", color=Colour.blurple())
         else:
             embed = Embed(title="Wrong index given", color=Colour.red())
@@ -141,8 +152,9 @@ class MusicPlayerCog(commands.Cog):
     @cog_ext.cog_slash(name='skip', description='Skip current song')
     async def skip(self, ctx):
         await ctx.defer()
-        if self.voice_client is not None:
-            self.voice_client.stop()
+        server_id = ctx.guild.id
+        if server_id in self.voice_clients.keys():
+            self.voice_clients[server_id].stop()
             embed = Embed(title="Current track skipped", color=Colour.gold())
         else:
             embed = Embed(title="Nothing playing at this moment", color=Colour.gold())
@@ -151,8 +163,9 @@ class MusicPlayerCog(commands.Cog):
     @cog_ext.cog_slash(name='pause', description='Pause current song')
     async def pause(self, ctx):
         await ctx.defer()
-        if self.voice_client is not None and self.voice_client.is_playing():
-            self.voice_client.pause()
+        server_id = ctx.guild.id
+        if server_id in self.voice_clients.keys() and self.voice_clients[server_id].is_playing():
+            self.voice_clients[server_id].pause()
             embed = Embed(title="Song paused", color=Colour.gold())
         else:
             embed = Embed(title="Nothing to pause", color=Colour.gold())
@@ -161,8 +174,9 @@ class MusicPlayerCog(commands.Cog):
     @cog_ext.cog_slash(name='resume', description='Resume current song')
     async def resume(self, ctx):
         await ctx.defer()
-        if self.voice_client is not None and self.voice_client.is_paused():
-            self.voice_client.resume()
+        server_id = ctx.guild.id
+        if server_id in self.voice_clients.keys() and self.voice_clients[server_id].is_paused():
+            self.voice_clients[server_id].resume()
             embed = Embed(title="Playing again", color=Colour.gold())
         else:
             embed = Embed(title="Nothing to resume", color=Colour.gold())
