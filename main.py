@@ -2,12 +2,14 @@ import constants
 import discord
 import os
 import random
+import json
 from modules.message_analysis import Analysis_module
 from discord.ext import commands
 from config import settings
 from datetime import datetime
 from discord_slash import SlashCommand, SlashContext
 from discord import Embed
+import urllib.request
 
 # misc init
 start_time = datetime.now()
@@ -42,6 +44,29 @@ async def random_vot_da(ctx):
         await ctx.channel.send('вот да')
     elif random.random() < 0.005:
         await ctx.channel.send(random.choice(very_clever_quotes))
+
+
+async def cringe(ctx):
+    if random.random() < 0.005 or ctx.clean_content[:5] == 'balab':
+        query = ctx.clean_content
+        if query[:5] == 'balab':
+            query = query[6:]
+
+        headers = {
+            'Content-Type': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 11_4) AppleWebKit/605.1.15 '
+                          '(KHTML, like Gecko) Version/14.1.1 Safari/605.1.15',
+            'Origin': 'https://yandex.ru',
+            'Referer': 'https://yandex.ru/',
+        }
+        API_URL = 'https://zeapi.yandex.net/lab/api/yalm/text3'
+        payload = {"query": query, "intro": 1, "filter": 1}
+        params = json.dumps(payload).encode('utf8')
+        req = urllib.request.Request(API_URL, data=params, headers=headers)
+        response = urllib.request.urlopen(req)
+
+        msg = json.loads(response.read())['text']
+        await ctx.channel.send(msg)
 
 
 async def message_repeating(ctx):
@@ -91,6 +116,7 @@ async def on_message(ctx):
     await random_vot_da(ctx)
     await message_repeating(ctx)
     await reference_reaction(ctx)
+    await cringe(ctx)
     analyzer.save_message(ctx)
 
     await client.process_commands(ctx)

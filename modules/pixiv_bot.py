@@ -298,13 +298,13 @@ class PixivCog(commands.Cog):
                            ),
                            create_option(
                                name="limit",
-                               description="Maximum amount of pictures that will be shown (default 5, maximum = 10)",
+                               description="Maximum amount of pictures that will be shown (default 5, maximum = 20)",
                                option_type=SlashCommandOptionType.INTEGER,
                                required=False,
                            ),
                            create_option(
                                name="views",
-                               description="Required minimum amount of views (default = 3500)",
+                               description="Required minimum amount of views (default = 6000)",
                                option_type=SlashCommandOptionType.INTEGER,
                                required=False,
                            ),
@@ -320,14 +320,14 @@ class PixivCog(commands.Cog):
                                option_type=SlashCommandOptionType.STRING,
                                required=False,
                            )])
-    async def find(self, ctx, word='猫耳', match='partial_match_for_tags',
-                   limit=5, views=3500, rate=3.0, since_date=None):
+    async def find(self, ctx, word='猫耳', match='exact_match_for_tags',
+                   limit=5, views=6000, rate=3.0, since_date=None):
         await ctx.defer()
         try:
             word = self.api.search_autocomplete(word).tags[0].name
         except:
             pass
-        limit = min(limit, 10)
+        limit = min(limit, 20)
         date = random_date('2009-01-01', current_date(), random.random())
         if is_date(since_date):
             date = since_date
@@ -403,9 +403,9 @@ class PixivCog(commands.Cog):
                 limit = options['limit']
                 timestamp = time.time()
                 if channel_id not in self.timers.keys() or timestamp - self.timers[channel_id] > refresh_time:
+                    self.timers[str(channel_id)] = timestamp
                     query = self.api.illust_recommended()
                     await self.show_page(query, channel, limit=limit)
-                    self.timers[str(channel_id)] = timestamp
                     self.save(timers=True)
         except RuntimeError:
             pass
