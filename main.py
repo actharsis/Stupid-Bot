@@ -134,13 +134,6 @@ async def send_start_time(ctx: SlashContext):
     await ctx.send(embed=embed)
 
 
-@slash.slash(name='HomoQuote')
-async def homoquote(ctx: SlashContext):
-    await ctx.defer()
-    random_file_name = random.choice(os.listdir(os.getcwd() + '/' + constants.HOMOQUOTES_IMG_DIRECTORY))
-    await ctx.send(file=discord.File(constants.HOMOQUOTES_IMG_DIRECTORY + '/' + random_file_name))
-
-
 @slash.slash(name='Top')
 async def top(ctx: SlashContext):
     await ctx.defer()
