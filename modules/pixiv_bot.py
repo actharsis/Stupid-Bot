@@ -106,6 +106,7 @@ class PixivCog(commands.Cog):
             return 0, 0, False
         shown = 0
         print('fetched', len(query.illusts), 'images')
+        color = Colour.random()
         for illust in query.illusts:
             if shown == limit:
                 break
@@ -121,7 +122,11 @@ class PixivCog(commands.Cog):
                 img = self.api.download(illust.image_urls.large)
                 img.save(image_binary, 'PNG')
                 image_binary.seek(0)
-                message = await channel.send(f'Title: {title}', file=File(fp=image_binary, filename=filename))
+                file = File(fp=image_binary, filename=filename)
+                embed = Embed(description=f'Title: [{title}](https://www.pixiv.net/en/artworks/{illust.id})',
+                              color=color)
+                embed.set_image(url=f'attachment://{filename}')
+                message = await channel.send(embed=embed, file=file)
                 shown += 1
             if illust.is_bookmarked:
                 await message.add_reaction(emoji.emojize(':red_heart:'))
