@@ -43,10 +43,16 @@ def current_date():
     return time.strftime('%Y-%m-%d', time.localtime(time.time()))
 
 
-def next_year(date, time_format):
-    ptime = time.mktime(time.strptime(date, time_format))
+def next_year(date):
+    ptime = time.mktime(time.strptime(date, '%Y-%m-%d'))
     ptime += 31536000
-    return time.strftime(time_format, time.localtime(ptime))
+    return time.strftime('%Y-%m-%d', time.localtime(ptime))
+
+
+def back_date(months):
+    ptime = time.time()
+    ptime -= months * 2678400
+    return time.strftime('%Y-%m-%d', time.localtime(ptime))
 
 
 class BetterAppPixivAPI(AppPixivAPI):
@@ -322,13 +328,27 @@ class PixivCog(commands.Cog):
                                required=False,
                            ),
                            create_option(
+                               name="period",
+                               description="Random Date period (no impact if since date given)",
+                               option_type=SlashCommandOptionType.STRING,
+                               required=False,
+                               choices=[
+                                   create_choice(back_date(1 * 12), "new"),
+                                   create_choice(back_date(2 * 12), "2 years range"),
+                                   create_choice(back_date(3 * 12), "3 years range"),
+                                   create_choice(back_date(6 * 12), "6 years range"),
+                                   create_choice(back_date(9 * 12), "9 years range"),
+                                   create_choice(back_date(14 * 12), "all time period"),
+                               ]
+                           ),
+                           create_option(
                                name="since_date",
                                description="Fixed date in format YYYY-MM-DD from which search will be initialized",
                                option_type=SlashCommandOptionType.STRING,
                                required=False,
                            )])
     async def find(self, ctx, word='猫耳', match='exact_match_for_tags',
-                   limit=5, views=6000, rate=3.0, since_date=None):
+                   limit=5, views=6000, rate=3.0, period=back_date(4 * 12), since_date=None):
         await ctx.defer()
         channel = ctx.channel
         try:
@@ -336,7 +356,7 @@ class PixivCog(commands.Cog):
         except:
             pass
         limit = min(limit, 20)
-        date = random_date('2009-01-01', current_date(), random.random())
+        date = random_date(period, current_date(), random.random())
         if is_date(since_date):
             date = since_date
         fetched, shown, offset, alive = 0, 0, 0, True
@@ -344,7 +364,7 @@ class PixivCog(commands.Cog):
             query = self.api.search_illust(word, search_target=match,
                                            end_date=date, offset=offset)
             if len(query.illusts) == 0 and date < current_date():
-                date = next_year(date, '%Y-%m-%d')
+                date = next_year(date)
                 offset = 0
                 continue
             good, total, alive = await self.show_page(query, channel, limit - shown, views, rate)
