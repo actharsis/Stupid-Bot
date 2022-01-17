@@ -10,7 +10,7 @@ CLIENT_ID = "MOBrBDS8blbauoSck0ZfDbtuzpyT"
 CLIENT_SECRET = "lsACyCD94FhDUtGTXi3QzcFE2uU1hqtDaKeqrdwj"
 
 
-def get_refresh_token(refresh_token):
+def refresh_token(refresh_token):
     response = requests.post(
         AUTH_TOKEN_URL,
         data={

@@ -7,6 +7,7 @@ import random
 import time
 
 from PIL import Image
+from config import pixiv_refresh_token
 from discord import Embed, File
 from discord.colour import Colour
 from discord.ext import commands
@@ -15,7 +16,7 @@ from discord_slash.model import SlashCommandOptionType
 from discord_slash.utils.manage_commands import create_option, create_choice
 from io import BytesIO
 from main import client
-from modules.pixiv_auth import get_refresh_token
+from modules.pixiv_auth import refresh_token
 from pixivpy3 import *
 
 
@@ -48,12 +49,6 @@ def next_year(date, time_format):
     return time.strftime(time_format, time.localtime(ptime))
 
 
-def read_pixiv_refresh_token():
-    with open("pixiv_token.txt", "r") as f:
-        token = f.readline()
-    return token
-
-
 class BetterAppPixivAPI(AppPixivAPI):
     def download(self, url, prefix='', path=os.path.curdir, name=None, replace=False, fname=None,
                  referer='https://app-api.pixiv.net/'):
@@ -71,7 +66,7 @@ class BetterAppPixivAPI(AppPixivAPI):
 
 class PixivCog(commands.Cog):
     api = BetterAppPixivAPI()
-    api.auth(refresh_token=read_pixiv_refresh_token())
+    api.auth(refresh_token=pixiv_refresh_token)
 
     def __init__(self, bot):
         self.bot = bot
@@ -80,6 +75,7 @@ class PixivCog(commands.Cog):
         self.last_query = None
         self.last_type = None
         self.token_expiration_time = None
+        self.spoilers = False
         self.load()
 
     def save(self, channels=False, timers=False):
@@ -111,13 +107,15 @@ class PixivCog(commands.Cog):
                 continue
             if minimum_rate is not None and illust.total_bookmarks / illust.total_view * 100 < minimum_rate:
                 continue
-            filename = str(illust.id) + '.png'
+            filename = f'{str(illust.id)}.png'
+            if self.spoilers and illust.sanity_level >= 6:
+                filename = f'SPOILER_{filename}'
             title = illust.title
             with BytesIO() as image_binary:
                 img = self.api.download(illust.image_urls.large)
                 img.save(image_binary, 'PNG')
                 image_binary.seek(0)
-                message = await channel.send('Title: ' + title, file=File(fp=image_binary, filename=filename))
+                message = await channel.send(f'Title: {title}', file=File(fp=image_binary, filename=filename))
                 shown += 1
             if illust.is_bookmarked:
                 await message.add_reaction(emoji.emojize(':red_heart:'))
@@ -169,6 +167,15 @@ class PixivCog(commands.Cog):
             embed = Embed(title="This channel not exist in the list", color=Colour.gold())
         await ctx.send(embed=embed)
         self.save(channels=True, timers=True)
+
+    @cog_ext.cog_slash(name="spoil_nsfw", description="Spoil NSFW image switch")
+    async def change_spoiler(self, ctx):
+        self.spoilers = not self.spoilers
+        if self.spoilers:
+            embed = Embed(title="NSFW pictures now will be spoiled", color=Colour.green())
+        else:
+            embed = Embed(title="NSFW spoiler feature turned off", color=Colour.red())
+        await ctx.send(embed=embed, delete_after=5.0)
 
     @cog_ext.cog_slash(name='next', description="Show next page from the last 'best' query",
                        options=[
@@ -323,6 +330,7 @@ class PixivCog(commands.Cog):
     async def find(self, ctx, word='猫耳', match='exact_match_for_tags',
                    limit=5, views=6000, rate=3.0, since_date=None):
         await ctx.defer()
+        channel = ctx.channel
         try:
             word = self.api.search_autocomplete(word).tags[0].name
         except:
@@ -339,7 +347,7 @@ class PixivCog(commands.Cog):
                 date = next_year(date, '%Y-%m-%d')
                 offset = 0
                 continue
-            good, total, alive = await self.show_page(query, ctx.channel, limit - shown, views, rate)
+            good, total, alive = await self.show_page(query, channel, limit - shown, views, rate)
             shown += good
             fetched += total
             if alive:
@@ -358,12 +366,13 @@ class PixivCog(commands.Cog):
         if not reaction.me:
             if reaction.message.attachments is not None and len(reaction.message.attachments) == 1 and \
                     reaction.message.author == client.user:
-                illust_id = reaction.message.attachments[0].filename.split('.')[0]
+                illust_id = reaction.message.attachments[0].filename.split('.')[0].replace("SPOILER_", "")
                 emojis = {':red_heart:', ':growing_heart:', ':magnifying_glass_tilted_left:',
-                          ':broken_heart:', ':red_question_mark:'}
+                          ':broken_heart:', ':red_question_mark:', ':elephant:', ':face_vomiting:'}
                 if demojized in emojis:
                     await reaction.remove(user)
-                if demojized == ':red_heart:':
+
+                if demojized == ':red_heart:' or demojized == ':elephant:':
                     self.api.illust_bookmark_add(illust_id)
                     await reaction.message.add_reaction(emoji.emojize(':red_heart:'))
                 elif demojized == ':growing_heart:':
@@ -375,6 +384,8 @@ class PixivCog(commands.Cog):
                     await reaction.message.add_reaction(emoji.emojize(':thumbs_up:'))
                     query = self.api.illust_related(illust_id)
                     await self.show_page(query, reaction.message.channel, limit=5)
+                elif demojized == ':face_vomiting:':
+                    await reaction.message.delete()
                 elif demojized == ':broken_heart:':
                     self.api.illust_bookmark_delete(illust_id)
                     for r in reaction.message.reactions:
@@ -413,9 +424,7 @@ class PixivCog(commands.Cog):
     async def auto_refresh_token(self):
         timestamp = time.time()
         if self.token_expiration_time is None or self.token_expiration_time - timestamp < 1000:
-            token, ttl = get_refresh_token(read_pixiv_refresh_token())
-            with open("pixiv_token.txt", "w") as out:
-                out.write(token)
+            token, ttl = refresh_token(pixiv_refresh_token)
             self.token_expiration_time = timestamp + ttl
             self.api.auth(refresh_token=token)
             print('pixiv token updated')
