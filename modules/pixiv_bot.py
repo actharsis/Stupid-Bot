@@ -6,6 +6,7 @@ import os
 import random
 import time
 
+import pixivpy3.utils
 from PIL import Image
 from config import pixiv_refresh_token, pixiv_show_embed_illust
 from discord import Embed, File
@@ -395,7 +396,7 @@ class PixivCog(commands.Cog):
             if reaction.message.attachments is not None and len(reaction.message.attachments) == 1 and \
                     reaction.message.author == client.user:
                 illust_id = reaction.message.attachments[0].filename.split('.')[0].replace("SPOILER_", "")
-                emojis = {':red_heart:', ':growing_heart:', ':magnifying_glass_tilted_left:',
+                emojis = {':red_heart:', ':growing_heart:', ':magnifying_glass_tilted_left:', ':seedling:',
                           ':broken_heart:', ':red_question_mark:', ':elephant:', ':face_vomiting:'}
                 if demojized in emojis:
                     await reaction.remove(user)
@@ -409,6 +410,21 @@ class PixivCog(commands.Cog):
                     query = self.api.illust_related(illust_id)
                     await self.show_page(query, reaction.message.channel, limit=5)
                 elif demojized == ':magnifying_glass_tilted_left:':
+                    try:
+                        illust = self.api.illust_detail(illust_id).illust
+                        with BytesIO() as image_binary:
+                            filename = f'{str(illust.id)}.png'
+                            if self.spoilers and illust.sanity_level >= 6:
+                                filename = f'SPOILER_{filename}'
+                            img = self.api.download(illust.meta_single_page.original_image_url)
+                            img.save(image_binary, 'PNG')
+                            image_binary.seek(0)
+                            file = File(fp=image_binary, filename=filename)
+                            await reaction.message.channel.send('Original quality', file=file)
+                        await reaction.message.add_reaction(emoji.emojize(':thumbs_up:'))
+                    except pixivpy3.utils.PixivError:
+                        await reaction.message.add_reaction(emoji.emojize(':thumbs_down:'))
+                elif demojized == ':seedling:':
                     await reaction.message.add_reaction(emoji.emojize(':thumbs_up:'))
                     query = self.api.illust_related(illust_id)
                     await self.show_page(query, reaction.message.channel, limit=5)
@@ -428,7 +444,7 @@ class PixivCog(commands.Cog):
                         msg += tag.name + ', '
                     msg = msg[:-2]
                     await reaction.message.reply(msg, delete_after=30.0)
-        elif demojized in [':broken_heart:', ':thumbs_up:']:
+        elif demojized in [':broken_heart:', ':thumbs_up:', ':thumbs_down:']:
             await asyncio.sleep(5)
             await reaction.remove(user)
 
