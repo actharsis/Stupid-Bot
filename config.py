@@ -3,6 +3,7 @@ settings = {
 }
 
 pixiv_refresh_token = ''
+pixiv_show_embed_illust = False
 
 ydl_opts = {
     'format': 'bestaudio/best',

@@ -7,7 +7,7 @@ import random
 import time
 
 from PIL import Image
-from config import pixiv_refresh_token
+from config import pixiv_refresh_token, pixiv_show_embed_illust
 from discord import Embed, File
 from discord.colour import Colour
 from discord.ext import commands
@@ -123,10 +123,13 @@ class PixivCog(commands.Cog):
                 img.save(image_binary, 'PNG')
                 image_binary.seek(0)
                 file = File(fp=image_binary, filename=filename)
-                embed = Embed(description=f'Title: [{title}](https://www.pixiv.net/en/artworks/{illust.id})',
-                              color=color)
-                embed.set_image(url=f'attachment://{filename}')
-                message = await channel.send(embed=embed, file=file)
+                if pixiv_show_embed_illust:
+                    embed = Embed(description=f'Title: [{title}](https://www.pixiv.net/en/artworks/{illust.id})',
+                                  color=color)
+                    embed.set_image(url=f'attachment://{filename}')
+                    message = await channel.send(embed=embed, file=file)
+                else:
+                    message = await channel.send(f'Title: {title}', file=File(fp=image_binary, filename=filename))
                 shown += 1
             if illust.is_bookmarked:
                 await message.add_reaction(emoji.emojize(':red_heart:'))
