@@ -21,16 +21,16 @@ class PidorCog(commands.Cog):
         self.load()
 
     def save(self):
-        with open('pidor_channels.json', 'w') as file:
+        with open('json/pidor_channels.json', 'w') as file:
             file.write(json.dumps(self.pidor_channels))
-        with open('pidor_stats.json', 'w') as file:
+        with open('json/pidor_stats.json', 'w') as file:
             file.write(json.dumps(self.pidor_stats))
 
     def load(self):
         try:
-            with open('pidor_channels.json', 'r') as file:
+            with open('json/pidor_channels.json', 'r') as file:
                 self.pidor_channels = json.load(file)
-            with open('pidor_stats.json', 'r') as file:
+            with open('json/pidor_stats.json', 'r') as file:
                 self.pidor_stats = json.load(file)
         except:
             pass

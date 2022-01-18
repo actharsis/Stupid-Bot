@@ -58,7 +58,7 @@ class MusicPlayerCog(commands.Cog):
                        delete_after=int(song['duration']))
 
         options = ydl_opts
-        path = str(server_id) + '.mp3'
+        path = 'temp/' + str(server_id) + '.mp3'
         options['outtmpl'] = path
         if os.path.isfile(path):
             os.remove(path)

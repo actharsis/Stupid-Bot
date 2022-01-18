@@ -5,8 +5,8 @@ import json
 import os
 import random
 import time
-
 import pixivpy3.utils
+
 from PIL import Image
 from config import pixiv_refresh_token, pixiv_show_embed_illust
 from discord import Embed, File
@@ -87,17 +87,17 @@ class PixivCog(commands.Cog):
 
     def save(self, channels=False, timers=False):
         if channels:
-            with open('auto_pixiv_channels.json', 'w') as file:
+            with open('json/auto_pixiv_channels.json', 'w') as file:
                 file.write(json.dumps(self.channels))
         if timers:
-            with open('auto_pixiv_timers.json', 'w') as file:
+            with open('json/auto_pixiv_timers.json', 'w') as file:
                 file.write(json.dumps(self.timers))
 
     def load(self):
         try:
-            with open('auto_pixiv_channels.json', 'r') as file:
+            with open('json/auto_pixiv_channels.json', 'r') as file:
                 self.channels = json.load(file)
-            with open('auto_pixiv_timers.json', 'r') as file:
+            with open('json/auto_pixiv_timers.json', 'r') as file:
                 self.timers = json.load(file)
         except:
             pass
