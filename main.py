@@ -69,6 +69,11 @@ async def cringe(ctx):
         await ctx.channel.send(msg)
 
 
+async def random_emote(ctx):
+    if random.random() < 0.05:
+        await ctx.add_reaction(random.choice(ctx.guild.emojis))
+
+
 async def message_repeating(ctx):
     if ctx.channel.id in history and ctx.content != '':
         if history[ctx.channel.id]['text'] == ctx.content:
@@ -113,11 +118,10 @@ async def on_message(ctx):
     if ctx.author.id == client.user.id:
         return
 
-    await random_vot_da(ctx)
-    await message_repeating(ctx)
+    stupid_things = [random_vot_da, cringe, random_emote]
     await reference_reaction(ctx)
-    await cringe(ctx)
-    analyzer.save_message(ctx)
+    await message_repeating(ctx)
+    await random.choice(stupid_things)(ctx)
 
     await client.process_commands(ctx)
 
