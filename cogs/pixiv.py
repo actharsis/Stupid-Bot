@@ -101,30 +101,31 @@ class PixivCog(commands.Cog):
         except:
             pass
 
+    async def send_illust(self, illust, img, chat):
+        filename = f'{str(illust.id)}.png'
+        if self.spoilers and illust.sanity_level >= 6:
+            filename = f'SPOILER_{filename}'
+        with BytesIO() as image_binary:
+            img.save(image_binary, 'PNG')
+            image_binary.seek(0)
+            file = File(fp=image_binary, filename=filename)
+        message = await chat.send(file=file)
+        if illust.is_bookmarked:
+            await message.add_reaction(emoji.emojize(':red_heart:'))
+
     async def show_illust(self, illust_id, chat):
         try:
             illust = self.api.illust_detail(illust_id).illust
             await chat.send(embed=Embed(title=f'Fetching illustration {illust.title} in original quality...',
-                                        color=Colour.green()), delete_after=10.0)
-            filename = f'{str(illust.id)}.png'
-            if self.spoilers and illust.sanity_level >= 6:
-                filename = f'SPOILER_{filename}'
+                                        color=Colour.green()))
             if len(illust.meta_single_page) > 0:
                 img = self.api.download(illust.meta_single_page.original_image_url)
-                with BytesIO() as image_binary:
-                    img.save(image_binary, 'PNG')
-                    image_binary.seek(0)
-                    file = File(fp=image_binary, filename=filename)
-                await chat.send(file=file)
+                await self.send_illust(illust, img, chat)
             for item in illust.meta_pages:
                 img = self.api.download(item.image_urls.original)
-                with BytesIO() as image_binary:
-                    img.save(image_binary, 'PNG')
-                    image_binary.seek(0)
-                    file = File(fp=image_binary, filename=filename)
-                await chat.send(file=file)
+                await self.send_illust(illust, img, chat)
         except:
-            await chat.send(embed=Embed(title=f'Fail', color=Colour.red()), delete_after=5.0)
+            await chat.send(embed=Embed(title=f'Fail', color=Colour.red()))
             return None
 
     async def show_page(self, query, channel, limit=30, minimum_views=None, minimum_rate=None):
