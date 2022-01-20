@@ -5,7 +5,6 @@ import json
 import os
 import random
 import time
-import pixivpy3.utils
 
 from PIL import Image
 from config import pixiv_refresh_token, pixiv_show_embed_illust
@@ -101,6 +100,32 @@ class PixivCog(commands.Cog):
                 self.timers = json.load(file)
         except:
             pass
+
+    async def show_illust(self, illust_id, chat):
+        try:
+            illust = self.api.illust_detail(illust_id).illust
+            await chat.send(embed=Embed(title=f'Fetching illustration {illust.title} in original quality...',
+                                        color=Colour.green()), delete_after=10.0)
+            filename = f'{str(illust.id)}.png'
+            if self.spoilers and illust.sanity_level >= 6:
+                filename = f'SPOILER_{filename}'
+            if len(illust.meta_single_page) > 0:
+                img = self.api.download(illust.meta_single_page.original_image_url)
+                with BytesIO() as image_binary:
+                    img.save(image_binary, 'PNG')
+                    image_binary.seek(0)
+                    file = File(fp=image_binary, filename=filename)
+                await chat.send(file=file)
+            for item in illust.meta_pages:
+                img = self.api.download(item.image_urls.original)
+                with BytesIO() as image_binary:
+                    img.save(image_binary, 'PNG')
+                    image_binary.seek(0)
+                    file = File(fp=image_binary, filename=filename)
+                await chat.send(file=file)
+        except:
+            await chat.send(embed=Embed(title=f'Fail', color=Colour.red()), delete_after=5.0)
+            return None
 
     async def show_page(self, query, channel, limit=30, minimum_views=None, minimum_rate=None):
         if channel is None or query.illusts is None or len(query.illusts) == 0:
@@ -303,9 +328,9 @@ class PixivCog(commands.Cog):
                        options=[
                            create_option(
                                name="word",
-                               description="Find by specific word (default = 猫耳)",
+                               description="Find by specific word",
                                option_type=SlashCommandOptionType.STRING,
-                               required=False,
+                               required=True,
                            ),
                            create_option(
                                name="match",
@@ -356,7 +381,7 @@ class PixivCog(commands.Cog):
                                option_type=SlashCommandOptionType.STRING,
                                required=False,
                            )])
-    async def find(self, ctx, word='猫耳', match='exact_match_for_tags',
+    async def find(self, ctx, word, match='exact_match_for_tags',
                    limit=5, views=6000, rate=3.0, period=back_date(4 * 12), since_date=None):
         await ctx.defer()
         channel = ctx.channel
@@ -386,6 +411,19 @@ class PixivCog(commands.Cog):
                       color=Colour.green())
         await ctx.send(embed=embed, delete_after=10.0)
 
+    @cog_ext.cog_slash(name='illust', description='Get pixiv illustration by ID',
+                       options=[
+                           create_option(
+                               name="idx",
+                               description="Illustration ID",
+                               option_type=SlashCommandOptionType.STRING,
+                               required=True
+                           )
+                       ])
+    async def get_illust(self, ctx, idx):
+        await ctx.defer()
+        await self.show_illust(idx, ctx)
+
     @commands.Cog.listener()
     async def on_reaction_add(self, reaction, user):
         try:
@@ -410,19 +448,10 @@ class PixivCog(commands.Cog):
                     query = self.api.illust_related(illust_id)
                     await self.show_page(query, reaction.message.channel, limit=5)
                 elif demojized == ':magnifying_glass_tilted_left:':
-                    try:
-                        illust = self.api.illust_detail(illust_id).illust
-                        with BytesIO() as image_binary:
-                            filename = f'{str(illust.id)}.png'
-                            if self.spoilers and illust.sanity_level >= 6:
-                                filename = f'SPOILER_{filename}'
-                            img = self.api.download(illust.meta_single_page.original_image_url)
-                            img.save(image_binary, 'PNG')
-                            image_binary.seek(0)
-                            file = File(fp=image_binary, filename=filename)
-                            await reaction.message.channel.send('Original quality', file=file)
+                    r = await self.show_illust(illust_id, reaction.message.channel)
+                    if r:
                         await reaction.message.add_reaction(emoji.emojize(':thumbs_up:'))
-                    except pixivpy3.utils.PixivError:
+                    else:
                         await reaction.message.add_reaction(emoji.emojize(':thumbs_down:'))
                 elif demojized == ':seedling:':
                     await reaction.message.add_reaction(emoji.emojize(':thumbs_up:'))
@@ -438,12 +467,20 @@ class PixivCog(commands.Cog):
                     await reaction.message.add_reaction(emoji.emojize(':broken_heart:'))
                 elif demojized == ':red_question_mark:':
                     await reaction.message.add_reaction(emoji.emojize(':thumbs_up:'))
-                    detail = self.api.illust_bookmark_detail(illust_id)
-                    msg = "Tags: "
-                    for tag in detail.bookmark_detail.tags:
-                        msg += tag.name + ', '
-                    msg = msg[:-2]
-                    await reaction.message.reply(msg, delete_after=30.0)
+                    illust = self.api.illust_detail(illust_id).illust
+                    tags = ""
+                    for tag in illust.tags:
+                        tags += f'{tag.name}'
+                        if tag.translated_name is not None:
+                            tags += f' - {tag.translated_name}'
+                        tags += ', '
+                    tags = tags[:-2]
+                    embed = Embed(title="Illustration info:",
+                                  description=f'Title: [{illust.title}](https://www.pixiv.net/en/artworks/{illust.id})'
+                                              f'\n\nViews: {illust.total_view}, Bookmarks: {illust.total_bookmarks}'
+                                              f'\n\nTags: {tags}',
+                                  color=Colour.green())
+                    await reaction.message.reply(embed=embed, delete_after=30.0)
         elif demojized in [':broken_heart:', ':thumbs_up:', ':thumbs_down:']:
             await asyncio.sleep(5)
             await reaction.remove(user)

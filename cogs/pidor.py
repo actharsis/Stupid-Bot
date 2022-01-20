@@ -76,7 +76,7 @@ class PidorCog(commands.Cog):
             stats = []
             for user in self.pidor_stats[channel_id]:
                 stats.append([self.pidor_stats[channel_id][user], user])
-            stats.sort()
+            stats.sort(key=lambda t: (-t[0], t[1]))
             text = ''
             for idx, item in enumerate(stats):
                 count = item[0]
