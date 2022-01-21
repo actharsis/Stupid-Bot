@@ -118,6 +118,7 @@ class MiscCog(commands.Cog):
         await random.choice(stupid_things)(ctx)
 
         await self.client.process_commands(ctx)
+        self.analyzer.save_message(ctx)
 
     @cog_ext.cog_slash(name='RenaStare')
     async def rena_stare(self, ctx):
@@ -130,12 +131,12 @@ class MiscCog(commands.Cog):
         await ctx.send(embed=embed)
 
     @cog_ext.cog_slash(name='Top')
-    async def top(self, ctx):
+    async def send_top(self, ctx):
         await ctx.defer()
         await self.analyzer.get_top(ctx)
 
     @cog_ext.cog_slash(name='Voice')
-    async def top(self, ctx):
+    async def send_voice_activity(self, ctx):
         await ctx.defer()
         await self.analyzer.get_voice_activity(ctx)
 
