@@ -481,7 +481,7 @@ class PixivCog(commands.Cog):
                                               f'\n\nViews: {illust.total_view}, Bookmarks: {illust.total_bookmarks}'
                                               f'\n\nTags: {tags}',
                                   color=Colour.green())
-                    await reaction.message.reply(embed=embed, delete_after=30.0)
+                    await reaction.message.edit(embed=embed)
         elif demojized in [':broken_heart:', ':thumbs_up:', ':thumbs_down:']:
             await asyncio.sleep(5)
             await reaction.remove(user)
