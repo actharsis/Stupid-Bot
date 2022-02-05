@@ -101,15 +101,32 @@ class PixivCog(commands.Cog):
         except:
             pass
 
-    async def send_illust(self, illust, img, chat):
-        filename = f'{str(illust.id)}.png'
+    async def send_illust(self, illust, url, chat, num=None, show_title=False, color=None):
+        img = self.api.download(url)
+        img_type = url.split('.')[-1]
+        filename = f'{str(illust.id)}.{img_type}'
+        if num is not None:
+            filename = f'{num}_{filename}'
         if self.spoilers and illust.sanity_level >= 6:
             filename = f'SPOILER_{filename}'
         with BytesIO() as image_binary:
-            img.save(image_binary, 'PNG')
+            img.save(image_binary, img.format)
             image_binary.seek(0)
             file = File(fp=image_binary, filename=filename)
-        message = await chat.send(file=file)
+        if show_title:
+            title = illust.title
+            if pixiv_show_embed_illust:
+                embed = Embed(description=f'Title: [{title}](https://www.pixiv.net/en/artworks/{illust.id})',
+                              color=color)
+                embed.set_image(url=f'attachment://{filename}')
+                message = await chat.send(embed=embed, file=file)
+            else:
+                text = f'Title: {title}'
+                if len(illust.meta_pages) > 0:
+                    text += f', {len(illust.meta_pages)} images'
+                message = await chat.send(text, file=file)
+        else:
+            message = await chat.send(file=file)
         if illust.is_bookmarked:
             await message.add_reaction(emoji.emojize(':red_heart:'))
 
@@ -117,19 +134,19 @@ class PixivCog(commands.Cog):
         try:
             illust = self.api.illust_detail(illust_id).illust
             await chat.send(embed=Embed(title=f'Fetching illustration {illust.title} in original quality...',
-                                        color=Colour.green()))
+                                        color=Colour.green()), delete_after=5.0)
             if len(illust.meta_single_page) > 0:
-                img = self.api.download(illust.meta_single_page.original_image_url)
-                await self.send_illust(illust, img, chat)
-            for item in illust.meta_pages:
-                img = self.api.download(item.image_urls.original)
-                await self.send_illust(illust, img, chat)
+                url = illust.meta_single_page.original_image_url
+                await self.send_illust(illust, url, chat)
+            for idx, item in enumerate(illust.meta_pages):
+                url = item.image_urls.original
+                await self.send_illust(illust, url, chat, idx)
         except:
-            await chat.send(embed=Embed(title=f'Fail', color=Colour.red()))
+            await chat.send(embed=Embed(title=f'Fail', color=Colour.red()), delete_after=5.0)
             return None
 
-    async def show_page(self, query, channel, limit=30, minimum_views=None, minimum_rate=None):
-        if channel is None or query.illusts is None or len(query.illusts) == 0:
+    async def show_page(self, query, chat, limit=30, minimum_views=None, minimum_rate=None):
+        if chat is None or query.illusts is None or len(query.illusts) == 0:
             return 0, 0, False
         shown = 0
         print('fetched', len(query.illusts), 'images')
@@ -141,25 +158,8 @@ class PixivCog(commands.Cog):
                 continue
             if minimum_rate is not None and illust.total_bookmarks / illust.total_view * 100 < minimum_rate:
                 continue
-            filename = f'{str(illust.id)}.png'
-            if self.spoilers and illust.sanity_level >= 6:
-                filename = f'SPOILER_{filename}'
-            title = illust.title
-            with BytesIO() as image_binary:
-                img = self.api.download(illust.image_urls.large)
-                img.save(image_binary, 'PNG')
-                image_binary.seek(0)
-                file = File(fp=image_binary, filename=filename)
-                if pixiv_show_embed_illust:
-                    embed = Embed(description=f'Title: [{title}](https://www.pixiv.net/en/artworks/{illust.id})',
-                                  color=color)
-                    embed.set_image(url=f'attachment://{filename}')
-                    message = await channel.send(embed=embed, file=file)
-                else:
-                    message = await channel.send(f'Title: {title}', file=File(fp=image_binary, filename=filename))
-                shown += 1
-            if illust.is_bookmarked:
-                await message.add_reaction(emoji.emojize(':red_heart:'))
+            await self.send_illust(illust, illust.image_urls.large, chat, show_title=True, color=color)
+            shown += 1
         return shown, len(query.illusts), True
 
     async def show_page_embed(self, query, query_type, chat, limit=None, save_query=True):
@@ -352,13 +352,13 @@ class PixivCog(commands.Cog):
                            ),
                            create_option(
                                name="views",
-                               description="Required minimum amount of views (default = 6000)",
+                               description="Required minimum amount of views (default = 20000)",
                                option_type=SlashCommandOptionType.INTEGER,
                                required=False,
                            ),
                            create_option(
                                name="rate",
-                               description="Required minimum percent of views/bookmarks (default = 3)",
+                               description="Required minimum percent of views/bookmarks (default = 10)",
                                option_type=SlashCommandOptionType.FLOAT,
                                required=False,
                            ),
@@ -383,7 +383,7 @@ class PixivCog(commands.Cog):
                                required=False,
                            )])
     async def find(self, ctx, word, match='exact_match_for_tags',
-                   limit=5, views=6000, rate=3.0, period=back_date(4 * 12), since_date=None):
+                   limit=5, views=20000, rate=10.0, period=back_date(4 * 12), since_date=None):
         await ctx.defer()
         channel = ctx.channel
         try:
@@ -434,7 +434,7 @@ class PixivCog(commands.Cog):
         if not reaction.me:
             if reaction.message.attachments is not None and len(reaction.message.attachments) == 1 and \
                     reaction.message.author == client.user:
-                illust_id = reaction.message.attachments[0].filename.split('.')[0].replace("SPOILER_", "")
+                illust_id = reaction.message.attachments[0].filename.split('.')[0].split('_')[-1]
                 emojis = {':red_heart:', ':growing_heart:', ':magnifying_glass_tilted_left:', ':seedling:',
                           ':broken_heart:', ':red_question_mark:', ':elephant:', ':face_vomiting:'}
                 if demojized in emojis:
@@ -478,10 +478,13 @@ class PixivCog(commands.Cog):
                     tags = tags[:-2]
                     embed = Embed(title="Illustration info:",
                                   description=f'Title: [{illust.title}](https://www.pixiv.net/en/artworks/{illust.id})'
+                                              f', ID: {illust.id}'
                                               f'\n\nViews: {illust.total_view}, Bookmarks: {illust.total_bookmarks}'
                                               f'\n\nTags: {tags}',
                                   color=Colour.green())
                     await reaction.message.edit(embed=embed)
+                    await asyncio.sleep(20)
+                    await reaction.message.edit(suppress=True)
         elif demojized in [':broken_heart:', ':thumbs_up:', ':thumbs_down:']:
             await asyncio.sleep(5)
             await reaction.remove(user)
