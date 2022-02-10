@@ -1,16 +1,12 @@
 import asyncio
 import json
+import modules.date as date
 import random
-import time
 
-from discord import Embed
-from discord.colour import Colour
-from discord.ext import commands
 from discord_slash import cog_ext
-
-
-def current_date():
-    return time.strftime('%Y-%m-%d', time.localtime(time.time()))
+from discord.ext import commands
+from discord.colour import Colour
+from discord import Embed
 
 
 class PidorCog(commands.Cog):
@@ -38,7 +34,7 @@ class PidorCog(commands.Cog):
     @cog_ext.cog_slash(name='pidor')
     async def roll(self, ctx):
         await ctx.defer()
-        cur_time = str(current_date())
+        cur_time = str(date.current())
         channel_id = str(ctx.guild.id)
         if channel_id not in self.pidor_channels.keys():
             self.pidor_channels[channel_id] = {'time': cur_time, 'pidor': None}

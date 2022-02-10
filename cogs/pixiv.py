@@ -1,7 +1,7 @@
 import asyncio
-import datetime
 import emoji
 import json
+import modules.date as date
 import os
 import random
 import time
@@ -18,41 +18,6 @@ from io import BytesIO
 from main import client
 from modules.pixiv_auth import refresh_token
 from pixivpy3 import *
-
-
-def is_date(date_text):
-    try:
-        datetime.datetime.strptime(date_text, '%Y-%m-%d')
-        return True
-    except (ValueError, TypeError):
-        return False
-
-
-def str_time_prop(start, end, time_format, prop):
-    stime = time.mktime(time.strptime(start, time_format))
-    etime = time.mktime(time.strptime(end, time_format))
-    ptime = stime + prop * (etime - stime)
-    return time.strftime(time_format, time.localtime(ptime))
-
-
-def random_date(start, end, prop):
-    return str_time_prop(start, end, '%Y-%m-%d', prop)
-
-
-def current_date():
-    return time.strftime('%Y-%m-%d', time.localtime(time.time()))
-
-
-def next_year(date):
-    ptime = time.mktime(time.strptime(date, '%Y-%m-%d'))
-    ptime += 31536000
-    return time.strftime('%Y-%m-%d', time.localtime(ptime))
-
-
-def back_date(months):
-    ptime = time.time()
-    ptime -= months * 2678400
-    return time.strftime('%Y-%m-%d', time.localtime(ptime))
 
 
 class BetterAppPixivAPI(AppPixivAPI):
@@ -279,15 +244,15 @@ class PixivCog(commands.Cog):
                                required=False
                            ),
                            create_option(
-                               name="date",
+                               name="from_date",
                                description="Date of sample in format: YYYY-MM-DD",
                                option_type=SlashCommandOptionType.STRING,
                                required=False
                            )
                        ])
-    async def best(self, ctx, mode='month', limit=10, date=None):
+    async def best(self, ctx, mode='month', limit=10, from_date=None):
         await ctx.defer()
-        query = self.api.illust_ranking(mode=mode, date=date, offset=None)
+        query = self.api.illust_ranking(mode=mode, date=from_date, offset=None)
         embed = await self.show_page_embed(query, 'best', ctx.channel, limit, save_query=True)
         await ctx.send(embed=embed, delete_after=5.0)
 
@@ -368,22 +333,22 @@ class PixivCog(commands.Cog):
                                option_type=SlashCommandOptionType.STRING,
                                required=False,
                                choices=[
-                                   create_choice(back_date(1 * 12), "new"),
-                                   create_choice(back_date(2 * 12), "2 years range"),
-                                   create_choice(back_date(3 * 12), "3 years range"),
-                                   create_choice(back_date(6 * 12), "6 years range"),
-                                   create_choice(back_date(9 * 12), "9 years range"),
-                                   create_choice(back_date(14 * 12), "all time period"),
+                                   create_choice(date.back_in_months(1 * 12), "new"),
+                                   create_choice(date.back_in_months(2 * 12), "2 years range"),
+                                   create_choice(date.back_in_months(3 * 12), "3 years range"),
+                                   create_choice(date.back_in_months(6 * 12), "6 years range"),
+                                   create_choice(date.back_in_months(9 * 12), "9 years range"),
+                                   create_choice(date.back_in_months(14 * 12), "all time period"),
                                ]
                            ),
                            create_option(
-                               name="since_date",
+                               name="from_date",
                                description="Fixed date in format YYYY-MM-DD from which search will be initialized",
                                option_type=SlashCommandOptionType.STRING,
                                required=False,
                            )])
     async def find(self, ctx, word, match='exact_match_for_tags',
-                   limit=5, views=20000, rate=10.0, period=back_date(4 * 12), since_date=None):
+                   limit=5, views=20000, rate=10.0, period=date.back_in_months(4 * 12), from_date=None):
         await ctx.defer()
         channel = ctx.channel
         try:
@@ -391,15 +356,15 @@ class PixivCog(commands.Cog):
         except:
             pass
         limit = min(limit, 20)
-        date = random_date(period, current_date(), random.random())
-        if is_date(since_date):
-            date = since_date
+        selected_date = date.random(period, date.current(), random.random())
+        if date.is_valid(from_date):
+            selected_date = from_date
         fetched, shown, offset, alive = 0, 0, 0, True
         while shown < limit and alive and fetched < 3000:
             query = self.api.search_illust(word, search_target=match,
                                            end_date=date, offset=offset)
-            if len(query.illusts) == 0 and date < current_date():
-                date = next_year(date)
+            if len(query.illusts) == 0 and selected_date < date.current():
+                selected_date = date.next_year(date)
                 offset = 0
                 continue
             good, total, alive = await self.show_page(query, channel, limit - shown, views, rate)
@@ -426,48 +391,52 @@ class PixivCog(commands.Cog):
         await self.show_illust(idx, ctx)
 
     @commands.Cog.listener()
-    async def on_reaction_add(self, reaction, user):
+    async def on_raw_reaction_add(self, payload):
+        server = client.get_guild(payload.guild_id)
+        channel = server.get_channel(payload.channel_id)
+        message = await channel.fetch_message(payload.message_id)
+        user = client.get_user(payload.user_id)
         try:
-            demojized = emoji.demojize(reaction.emoji)
+            demojized = emoji.demojize(payload.emoji)
         except TypeError:
             demojized = None
-        if not reaction.me:
-            if reaction.message.attachments is not None and len(reaction.message.attachments) == 1 and \
-                    reaction.message.author == client.user:
-                illust_id = reaction.message.attachments[0].filename.split('.')[0].split('_')[-1]
+        if payload.user_id != client.user.id:
+            if message.attachments is not None and len(message.attachments) == 1 and \
+                    message.author == client.user:
+                illust_id = message.attachments[0].filename.split('.')[0].split('_')[-1]
                 emojis = {':red_heart:', ':growing_heart:', ':magnifying_glass_tilted_left:', ':seedling:',
                           ':broken_heart:', ':red_question_mark:', ':elephant:', ':face_vomiting:'}
                 if demojized in emojis:
-                    await reaction.remove(user)
+                    await message.reactions.remove(user)
 
                 if demojized == ':red_heart:' or demojized == ':elephant:':
                     self.api.illust_bookmark_add(illust_id)
-                    await reaction.message.add_reaction(emoji.emojize(':red_heart:'))
+                    await message.add_reaction(emoji.emojize(':red_heart:'))
                 elif demojized == ':growing_heart:':
                     self.api.illust_bookmark_add(illust_id)
-                    await reaction.message.add_reaction(emoji.emojize(':red_heart:'))
+                    await message.add_reaction(emoji.emojize(':red_heart:'))
                     query = self.api.illust_related(illust_id)
-                    await self.show_page(query, reaction.message.channel, limit=5)
+                    await self.show_page(query, message.channel, limit=5)
                 elif demojized == ':magnifying_glass_tilted_left:':
-                    r = await self.show_illust(illust_id, reaction.message.channel)
+                    r = await self.show_illust(illust_id, message.channel)
                     if r:
-                        await reaction.message.add_reaction(emoji.emojize(':thumbs_up:'))
+                        await message.add_reaction(emoji.emojize(':thumbs_up:'))
                     else:
-                        await reaction.message.add_reaction(emoji.emojize(':thumbs_down:'))
+                        await message.add_reaction(emoji.emojize(':thumbs_down:'))
                 elif demojized == ':seedling:':
-                    await reaction.message.add_reaction(emoji.emojize(':thumbs_up:'))
+                    await message.add_reaction(emoji.emojize(':thumbs_up:'))
                     query = self.api.illust_related(illust_id)
-                    await self.show_page(query, reaction.message.channel, limit=5)
+                    await self.show_page(query, message.channel, limit=5)
                 elif demojized == ':face_vomiting:':
-                    await reaction.message.delete()
+                    await message.delete()
                 elif demojized == ':broken_heart:':
                     self.api.illust_bookmark_delete(illust_id)
-                    for r in reaction.message.reactions:
+                    for r in message.reactions:
                         if r.me:
                             await r.remove(client.user)
-                    await reaction.message.add_reaction(emoji.emojize(':broken_heart:'))
+                    await message.add_reaction(emoji.emojize(':broken_heart:'))
                 elif demojized == ':red_question_mark:':
-                    await reaction.message.add_reaction(emoji.emojize(':thumbs_up:'))
+                    await message.add_reaction(emoji.emojize(':thumbs_up:'))
                     illust = self.api.illust_detail(illust_id).illust
                     tags = ""
                     for tag in illust.tags:
@@ -482,12 +451,12 @@ class PixivCog(commands.Cog):
                                               f'\n\nViews: {illust.total_view}, Bookmarks: {illust.total_bookmarks}'
                                               f'\n\nTags: {tags}',
                                   color=Colour.green())
-                    await reaction.message.edit(embed=embed)
+                    await message.edit(embed=embed)
                     await asyncio.sleep(20)
-                    await reaction.message.edit(suppress=True)
+                    await message.edit(suppress=True)
         elif demojized in [':broken_heart:', ':thumbs_up:', ':thumbs_down:']:
             await asyncio.sleep(5)
-            await reaction.remove(user)
+            await message.reactions.remove(user)
 
     async def auto_draw(self):
         try:
