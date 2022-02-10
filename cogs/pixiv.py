@@ -361,9 +361,9 @@ class PixivCog(commands.Cog):
         fetched, shown, offset, alive = 0, 0, 0, True
         while shown < limit and alive and fetched < 3000:
             query = self.api.search_illust(word, search_target=match,
-                                           end_date=date, offset=offset)
+                                           end_date=selected_date, offset=offset)
             if len(query.illusts) == 0 and selected_date < date.current():
-                selected_date = date.next_year(date)
+                selected_date = date.next_year(selected_date)
                 offset = 0
                 continue
             good, total, alive = await self.show_page(query, channel, limit - shown, views, rate)
