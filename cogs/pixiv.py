@@ -15,7 +15,6 @@ from discord_slash import cog_ext
 from discord_slash.model import SlashCommandOptionType
 from discord_slash.utils.manage_commands import create_option, create_choice
 from io import BytesIO
-from main import client
 from modules.pixiv_auth import refresh_token
 from pixivpy3 import *
 
@@ -392,22 +391,23 @@ class PixivCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload):
-        server = client.get_guild(payload.guild_id)
+        server = self.bot.get_guild(payload.guild_id)
         channel = server.get_channel(payload.channel_id)
         message = await channel.fetch_message(payload.message_id)
-        user = client.get_user(payload.user_id)
+        user = self.bot.get_user(payload.user_id)
+
         try:
-            demojized = emoji.demojize(payload.emoji)
+            demojized = emoji.demojize(payload.emoji.name)
         except TypeError:
             demojized = None
-        if payload.user_id != client.user.id:
+        if payload.user_id != self.bot.user.id:
             if message.attachments is not None and len(message.attachments) == 1 and \
-                    message.author == client.user:
+                    message.author == self.bot.user:
                 illust_id = message.attachments[0].filename.split('.')[0].split('_')[-1]
                 emojis = {':red_heart:', ':growing_heart:', ':magnifying_glass_tilted_left:', ':seedling:',
                           ':broken_heart:', ':red_question_mark:', ':elephant:', ':face_vomiting:'}
                 if demojized in emojis:
-                    await message.reactions.remove(user)
+                    await message.remove_reaction(payload.emoji, user)
 
                 if demojized == ':red_heart:' or demojized == ':elephant:':
                     self.api.illust_bookmark_add(illust_id)
@@ -433,7 +433,7 @@ class PixivCog(commands.Cog):
                     self.api.illust_bookmark_delete(illust_id)
                     for r in message.reactions:
                         if r.me:
-                            await r.remove(client.user)
+                            await r.remove(self.bot.user)
                     await message.add_reaction(emoji.emojize(':broken_heart:'))
                 elif demojized == ':red_question_mark:':
                     await message.add_reaction(emoji.emojize(':thumbs_up:'))
@@ -451,12 +451,13 @@ class PixivCog(commands.Cog):
                                               f'\n\nViews: {illust.total_view}, Bookmarks: {illust.total_bookmarks}'
                                               f'\n\nTags: {tags}',
                                   color=Colour.green())
+                    await message.edit(suppress=False)
                     await message.edit(embed=embed)
                     await asyncio.sleep(20)
                     await message.edit(suppress=True)
         elif demojized in [':broken_heart:', ':thumbs_up:', ':thumbs_down:']:
             await asyncio.sleep(5)
-            await message.reactions.remove(user)
+            await message.remove_reaction(payload.emoji, user)
 
     async def auto_draw(self):
         try:
