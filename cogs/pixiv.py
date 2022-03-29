@@ -8,7 +8,7 @@ import time
 
 from PIL import Image
 from config import pixiv_refresh_token, pixiv_show_embed_illust
-from discord import Embed, File
+from discord import Embed, File, utils
 from discord.colour import Colour
 from discord.ext import commands
 from discord_slash import cog_ext
@@ -109,7 +109,7 @@ class PixivCog(commands.Cog):
             await chat.send(embed=Embed(title=f'Fail', color=Colour.red()), delete_after=5.0)
             return None
 
-    async def show_page(self, query, chat, limit=30, minimum_views=None, minimum_rate=None):
+    async def show_page(self, query, chat, limit=30, minimum_views=None, minimum_rate=None, max_sanity=6):
         if chat is None or query.illusts is None or len(query.illusts) == 0:
             return 0, 0, False
         shown = 0
@@ -121,6 +121,8 @@ class PixivCog(commands.Cog):
             if minimum_views is not None and illust.total_view < minimum_views:
                 continue
             if minimum_rate is not None and illust.total_bookmarks / illust.total_view * 100 < minimum_rate:
+                continue
+            if max_sanity < illust.sanity_level:
                 continue
             await self.send_illust(illust, illust.image_urls.large, chat, show_title=True, color=color)
             shown += 1
@@ -327,6 +329,12 @@ class PixivCog(commands.Cog):
                                required=False,
                            ),
                            create_option(
+                               name="max_sanity_level",
+                               description="Filter illusts to a specified sanity level (default = 6, min = 2, max = 6)",
+                               option_type=SlashCommandOptionType.INTEGER,
+                               required=False,
+                           ),
+                           create_option(
                                name="period",
                                description="Random Date period (no impact if since date given)",
                                option_type=SlashCommandOptionType.STRING,
@@ -347,26 +355,28 @@ class PixivCog(commands.Cog):
                                required=False,
                            )])
     async def find(self, ctx, word, match='exact_match_for_tags',
-                   limit=5, views=20000, rate=10.0, period=date.back_in_months(4 * 12), from_date=None):
+                   limit=5, views=20000, rate=10.0, max_sanity_level=6, period=date.back_in_months(4 * 12), from_date=None):
         await ctx.defer()
         channel = ctx.channel
         try:
             word = self.api.search_autocomplete(word).tags[0].name
         except:
             pass
+        max_sanity_level = max(2, max_sanity_level)
+        max_sanity_level = min(6, max_sanity_level)
         limit = min(limit, 20)
         selected_date = date.random(period, date.current(), random.random())
         if date.is_valid(from_date):
             selected_date = from_date
         fetched, shown, offset, alive = 0, 0, 0, True
-        while shown < limit and alive and fetched < 3000:
+        while shown < limit and alive and fetched < 500:
             query = self.api.search_illust(word, search_target=match,
                                            end_date=selected_date, offset=offset)
             if len(query.illusts) == 0 and selected_date < date.current():
                 selected_date = date.next_year(selected_date)
                 offset = 0
                 continue
-            good, total, alive = await self.show_page(query, channel, limit - shown, views, rate)
+            good, total, alive = await self.show_page(query, channel, limit - shown, views, rate, max_sanity_level)
             shown += good
             fetched += total
             if alive:
@@ -391,9 +401,9 @@ class PixivCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload):
-        server = self.bot.get_guild(payload.guild_id)
-        channel = server.get_channel(payload.channel_id)
+        channel = self.bot.get_channel(payload.channel_id)
         message = await channel.fetch_message(payload.message_id)
+
         user = self.bot.get_user(payload.user_id)
 
         try:
