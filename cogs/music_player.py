@@ -1,18 +1,17 @@
-import math
-
-import wavelink
 import asyncio
-import emoji
 import discord
+import emoji
+import math
+import wavelink
 
+from config import volume_lock
 from discord import Embed
 from discord.colour import Colour
 from discord.ext import commands
 from discord_slash import cog_ext
 from discord_slash.model import SlashCommandOptionType
 from discord_slash.utils.manage_commands import create_option
-from wavelink import Track, Node, player
-from config import volume_lock
+from wavelink import Track, Node
 
 
 def time_to_str(time):
@@ -31,18 +30,6 @@ def render_bar(cells, time, duration):
     return bar
 
 
-def player_embed(player):
-    track = player.track
-    embed = Embed(title="🎧 Currently playing:",
-                  description=f"[**{track.title}**]({track.uri})\n"
-                              f"**Length**: *{time_to_str(track.length)}*; **Volume**: *{int(player.volume)}*\n"
-                              f"**{' ' * 40}Timeline**: *{short_time(player.position)}/{short_time(track.length)}*\n"
-                              f"```{render_bar(36, player.position, track.length)}```",
-                  color=Colour.red())
-    embed.set_image(url=f'https://img.youtube.com/vi/{track.uri[32:]}/mqdefault.jpg')
-    return embed
-
-
 class MusicPlayerCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -51,6 +38,7 @@ class MusicPlayerCog(commands.Cog):
         self.queues = {}
         self.server_ctx = {}
         self.messages = {}
+        self.loops = set()
 
     async def connect_nodes(self):
         await self.bot.wait_until_ready()
@@ -59,7 +47,7 @@ class MusicPlayerCog(commands.Cog):
                                             port=2333,
                                             password='youwillpass')
 
-    async def soft_leave_vc(self, player: player):
+    async def soft_leave_vc(self, player: wavelink.player):
         await asyncio.sleep(20)
         if self.queues[player.guild.id].is_empty and not self.players[player.guild.id].is_playing():
             await player.disconnect()
@@ -73,7 +61,7 @@ class MusicPlayerCog(commands.Cog):
     async def message_auto_update(self, server_id):
         while server_id in self.messages:
             try:
-                await self.messages[server_id].edit(embed=player_embed(self.players[server_id]))
+                await self.messages[server_id].edit(embed=self.player_embed(self.players[server_id]))
             except AttributeError:
                 return
             await asyncio.sleep(3)
@@ -81,6 +69,33 @@ class MusicPlayerCog(commands.Cog):
     @commands.Cog.listener()
     async def on_wavelink_node_ready(self, node: Node):
         print(f"Connected to lavalink!")
+
+    @commands.Cog.listener()
+    async def on_wavelink_track_start(self, player: wavelink.player, track: Track):
+        server_id = player.guild.id
+        if server_id in self.server_ctx:
+            ctx = self.server_ctx[server_id]
+            if server_id not in self.messages:
+                msg = await ctx.send(embed=self.player_embed(player))
+                self.messages[server_id] = msg
+                self.bot.loop.create_task(self.message_auto_update(server_id))
+                emojis = [':last_track_button:', ':reverse_button:', ':pause_button:', ':play_button:',
+                          ':next_track_button:', ':red_square:']
+                if not volume_lock:
+                    emojis.append(':muted_speaker:')
+                for e in emojis:
+                    await msg.add_reaction(emoji.emojize(e))
+
+    @commands.Cog.listener()
+    async def on_wavelink_track_end(self, player: wavelink.player, track: Track, reason):
+        server_id = player.guild.id
+        if self.queues[server_id].is_empty and server_id not in self.loops:
+            self.bot.loop.create_task(self.soft_message_delete(server_id))
+            self.bot.loop.create_task(self.soft_leave_vc(player))
+        if server_id in self.loops:
+            await player.play(track)
+        else:
+            await self.play_next(player, server_id)
 
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload):
@@ -93,7 +108,7 @@ class MusicPlayerCog(commands.Cog):
 
         user = self.bot.get_user(payload.user_id)
         emojis = {':last_track_button:', ':reverse_button:', ':pause_button:', ':play_button:',
-                  ':next_track_button:', ':red_square:'}
+                  ':next_track_button:', ':red_square:', ':repeat_button:'}
         if not volume_lock:
             emojis.add(':muted_speaker:')
             emojis.add(':speaker_high_volume:')
@@ -122,8 +137,12 @@ class MusicPlayerCog(commands.Cog):
                         cur = self.players[server_id].position
                         await player.seek(1000 * (cur + 30))
                     elif demojized == ':next_track_button:':
+                        if server_id in self.loops:
+                            self.loops.remove(server_id)
                         await player.stop()
                     elif demojized == ':red_square:':
+                        if server_id in self.loops:
+                            self.loops.remove(server_id)
                         self.queues[server_id].clear()
                         await player.stop()
                     elif demojized == ':muted_speaker:':
@@ -134,6 +153,11 @@ class MusicPlayerCog(commands.Cog):
                         await message.remove_reaction(emoji.emojize(':speaker_high_volume:'), self.bot.user)
                         await message.add_reaction(emoji.emojize(':muted_speaker:'))
                         await player.set_volume(100)
+                    elif demojized == ':repeat_button:':
+                        if server_id in self.loops:
+                            self.loops.remove(server_id)
+                        else:
+                            self.loops.add(server_id)
                     await message.add_reaction(emoji.emojize(':thumbs_up:'))
                 except:
                     await message.add_reaction(emoji.emojize(':thumbs_down:'))
@@ -147,31 +171,19 @@ class MusicPlayerCog(commands.Cog):
             except discord.errors.NotFound:
                 pass
 
-    @commands.Cog.listener()
-    async def on_wavelink_track_start(self, player: player, track: Track):
-        server_id = player.guild.id
-        if server_id in self.server_ctx:
-            ctx = self.server_ctx[server_id]
-            if server_id not in self.messages:
-                msg = await ctx.send(embed=player_embed(player))
-                self.messages[server_id] = msg
-                self.bot.loop.create_task(self.message_auto_update(server_id))
-                emojis = [':last_track_button:', ':reverse_button:', ':pause_button:', ':play_button:',
-                          ':next_track_button:', ':red_square:']
-                if not volume_lock:
-                    emojis.append(':muted_speaker:')
-                for e in emojis:
-                    await msg.add_reaction(emoji.emojize(e))
+    def player_embed(self, player):
+        track = player.track
+        embed = Embed(title="🎧 Currently playing:",
+                      description=f"[**{track.title}**]({track.uri})\n"
+                                  f"**Length**: *{time_to_str(track.length)}*; **Volume**: *{int(player.volume)}*\n"
+                                  f"**{' ' * 40}Timeline**: *{short_time(player.position)}/{short_time(track.length)}* \n"
+                                  f"```{render_bar(36, player.position, track.length)}```"
+                                  f"{'*On repeat*' if player.guild.id in self.loops else ''}",
+                      color=Colour.red())
+        embed.set_image(url=f'https://img.youtube.com/vi/{track.uri[32:]}/mqdefault.jpg')
+        return embed
 
-    @commands.Cog.listener()
-    async def on_wavelink_track_end(self, player: player, track: Track, reason):
-        server_id = player.guild.id
-        if self.queues[server_id].is_empty:
-            await self.soft_message_delete(server_id)
-            await self.soft_leave_vc(player)
-        await self.play_next(player, server_id)
-
-    async def play_next(self, player: player, server_id):
+    async def play_next(self, player: wavelink.player, server_id):
         queue = self.queues[server_id]
         if not queue.is_empty:
             track = queue.pop()
@@ -201,7 +213,12 @@ class MusicPlayerCog(commands.Cog):
             self.queues[server_id] = wavelink.Queue()
         player = self.players[server_id]
         queue = self.queues[server_id]
-        track = await wavelink.YouTubeTrack.search(query=track, return_first=True)
+        try:
+            track = await wavelink.YouTubeTrack.search(query=track, return_first=True)
+        except:
+            await ctx.send(embed=Embed(title="Nothing found :(", color=Colour.green()),
+                           delete_after=10.0)
+            return
 
         if player.is_playing():
             queue.put(track)
@@ -238,6 +255,8 @@ class MusicPlayerCog(commands.Cog):
         await ctx.defer()
         server_id = ctx.guild.id
         if server_id in self.players and self.players[server_id].is_playing():
+            if server_id in self.loops:
+                self.loops.remove(server_id)
             await self.players[server_id].stop()
             embed = Embed(title="Current track skipped", color=Colour.gold())
         else:
@@ -264,6 +283,8 @@ class MusicPlayerCog(commands.Cog):
         server_id = ctx.guild.id
         if server_id in self.players:
             self.queues[server_id].clear()
+            if server_id in self.loops:
+                self.loops.remove(server_id)
             await self.players[server_id].stop()
             embed = Embed(title="Ok", color=Colour.blurple())
         else:
@@ -323,6 +344,22 @@ class MusicPlayerCog(commands.Cog):
             embed = Embed(title="Ok", color=Colour.blurple())
         else:
             embed = Embed(title="Player not initialized", color=Colour.blurple())
+        await ctx.send(embed=embed, delete_after=10.0)
+
+    @cog_ext.cog_slash(name='loop', description='Repeat song infinitely (disables on skip/stop)')
+    async def loop(self, ctx):
+        await ctx.defer()
+        server_id = ctx.guild.id
+        if server_id in self.players and self.players[server_id].is_playing():
+            if server_id in self.loops:
+                self.loops.remove(server_id)
+                embed = Embed(title="Replay disabled", color=Colour.blurple())
+
+            else:
+                self.loops.add(server_id)
+                embed = Embed(title="On replay", color=Colour.blurple())
+        else:
+            embed = Embed(title="Nothing to loop", color=Colour.blurple())
         await ctx.send(embed=embed, delete_after=10.0)
 
 
