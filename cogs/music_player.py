@@ -12,6 +12,7 @@ from discord_slash import cog_ext
 from discord_slash.model import SlashCommandOptionType
 from discord_slash.utils.manage_commands import create_option
 from wavelink import Track, Node, player
+from config import volume_lock
 
 
 def time_to_str(time):
@@ -37,7 +38,7 @@ def player_embed(player):
                               f"**Length**: *{time_to_str(track.length)}*; **Volume**: *{int(player.volume)}*\n"
                               f"**{' ' * 40}Timeline**: *{short_time(player.position)}/{short_time(track.length)}*\n"
                               f"```{render_bar(36, player.position, track.length)}```",
-                  color=Colour.green())
+                  color=Colour.red())
     embed.set_image(url=f'https://img.youtube.com/vi/{track.uri[32:]}/mqdefault.jpg')
     return embed
 
@@ -79,7 +80,7 @@ class MusicPlayerCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_wavelink_node_ready(self, node: Node):
-        print(f"Node is ready!")
+        print(f"Connected to lavalink!")
 
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload):
@@ -92,50 +93,53 @@ class MusicPlayerCog(commands.Cog):
 
         user = self.bot.get_user(payload.user_id)
         emojis = {':last_track_button:', ':reverse_button:', ':pause_button:', ':play_button:',
-                  ':next_track_button:', ':red_square:', ':muted_speaker:', ':speaker_high_volume:'}
-        print(emoji.demojize(payload.emoji.name))
+                  ':next_track_button:', ':red_square:'}
+        if not volume_lock:
+            emojis.add(':muted_speaker:')
+            emojis.add(':speaker_high_volume:')
         try:
             demojized = emoji.demojize(payload.emoji.name)
         except TypeError:
             return
+        if self.messages[server_id].id != message.id:
+            return
         if payload.user_id != self.bot.user.id:
-            if self.messages[server_id].id == message.id:
-                if demojized in emojis:
-                    try:
-                        player = self.players[server_id]
-                        if demojized == ':last_track_button:':
-                            await player.seek(0)
-                        elif demojized == ':reverse_button:':
-                            cur = self.players[server_id].position
-                            await player.seek(1000 * (cur - 30))
-                        elif demojized == ':pause_button:':
-                            if player.is_playing():
-                                if player.is_paused():
-                                    await player.resume()
-                                else:
-                                    await player.pause()
-                        elif demojized == ':play_button:':
-                            cur = self.players[server_id].position
-                            await player.seek(1000 * (cur + 30))
-                        elif demojized == ':next_track_button:':
-                            await player.stop()
-                        elif demojized == ':red_square:':
-                            self.queues[server_id].clear()
-                            await player.stop()
-                        elif demojized == ':muted_speaker:':
-                            await message.remove_reaction(emoji.emojize(':muted_speaker:'), self.bot.user)
-                            await message.add_reaction(emoji.emojize(':speaker_high_volume:'))
-                            await player.set_volume(0)
-                        elif demojized == ':speaker_high_volume:':
-                            await message.remove_reaction(emoji.emojize(':speaker_high_volume:'), self.bot.user)
-                            await message.add_reaction(emoji.emojize(':muted_speaker:'))
-                            await player.set_volume(100)
-                        await message.add_reaction(emoji.emojize(':thumbs_up:'))
-                    except:
-                        await message.add_reaction(emoji.emojize(':thumbs_down:'))
-                else:
-                    await message.add_reaction(emoji.emojize(':angry_face:'))
-                await message.remove_reaction(payload.emoji, user)
+            if demojized in emojis:
+                try:
+                    player = self.players[server_id]
+                    if demojized == ':last_track_button:':
+                        await player.seek(0)
+                    elif demojized == ':reverse_button:':
+                        cur = self.players[server_id].position
+                        await player.seek(1000 * (cur - 30))
+                    elif demojized == ':pause_button:':
+                        if player.is_playing():
+                            if player.is_paused():
+                                await player.resume()
+                            else:
+                                await player.pause()
+                    elif demojized == ':play_button:':
+                        cur = self.players[server_id].position
+                        await player.seek(1000 * (cur + 30))
+                    elif demojized == ':next_track_button:':
+                        await player.stop()
+                    elif demojized == ':red_square:':
+                        self.queues[server_id].clear()
+                        await player.stop()
+                    elif demojized == ':muted_speaker:':
+                        await message.remove_reaction(emoji.emojize(':muted_speaker:'), self.bot.user)
+                        await message.add_reaction(emoji.emojize(':speaker_high_volume:'))
+                        await player.set_volume(0)
+                    elif demojized == ':speaker_high_volume:':
+                        await message.remove_reaction(emoji.emojize(':speaker_high_volume:'), self.bot.user)
+                        await message.add_reaction(emoji.emojize(':muted_speaker:'))
+                        await player.set_volume(100)
+                    await message.add_reaction(emoji.emojize(':thumbs_up:'))
+                except:
+                    await message.add_reaction(emoji.emojize(':thumbs_down:'))
+            else:
+                await message.add_reaction(emoji.emojize(':angry_face:'))
+            await message.remove_reaction(payload.emoji, user)
         elif demojized not in emojis:
             await asyncio.sleep(2)
             try:
@@ -153,14 +157,15 @@ class MusicPlayerCog(commands.Cog):
                 self.messages[server_id] = msg
                 self.bot.loop.create_task(self.message_auto_update(server_id))
                 emojis = [':last_track_button:', ':reverse_button:', ':pause_button:', ':play_button:',
-                          ':next_track_button:', ':red_square:', ':muted_speaker:']
+                          ':next_track_button:', ':red_square:']
+                if not volume_lock:
+                    emojis.append(':muted_speaker:')
                 for e in emojis:
                     await msg.add_reaction(emoji.emojize(e))
 
     @commands.Cog.listener()
     async def on_wavelink_track_end(self, player: player, track: Track, reason):
         server_id = player.guild.id
-        print('end')
         if self.queues[server_id].is_empty:
             await self.soft_message_delete(server_id)
             await self.soft_leave_vc(player)
@@ -308,6 +313,11 @@ class MusicPlayerCog(commands.Cog):
     async def volume(self, ctx, value):
         await ctx.defer()
         server_id = ctx.guild.id
+        if volume_lock:
+            await ctx.send(embed=Embed(
+                title="This feature is disabled", color=Colour.red()
+            ), delete_after=10.0)
+            return
         if server_id in self.players:
             await self.players[server_id].set_volume(value)
             embed = Embed(title="Ok", color=Colour.blurple())
