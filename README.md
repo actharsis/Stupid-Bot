@@ -9,3 +9,15 @@ TabaBot - another random bot. Main idea is message analysis: give some interesti
 `replies.txt` contains phrases that bot can reply to specific user. Users separated by `\n`. User ID starts after `//` and separated from quotes by `->`. Phrases separated can be separated by `;` for quote with ping. `;№` and `;&` separate phrases without ping.
 
 In `config.py` you can specify your token and prefix for commands.
+
+## Requirements
+python3
+discord.py
+wavelink
+discord_slash
+pixivpy3
+peewee
+PIL
+emoji
+java version "17.0.2"
+Lavalink server for music bot features
