@@ -12,12 +12,22 @@ In `config.py` you can specify your token and prefix for commands.
 
 ## Requirements
 python3
+
 discord.py
+
 wavelink
+
 discord_slash
+
 pixivpy3
+
 peewee
+
 PIL
+
 emoji
+
 java version "17.0.2"
+
 Lavalink server for music bot features
+
