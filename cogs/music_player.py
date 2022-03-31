@@ -48,14 +48,14 @@ class MusicPlayerCog(commands.Cog):
                                             port=2333,
                                             password='youwillpass')
 
-    async def soft_leave_vc(self, player: wavelink.player):
+    async def soft_leave_vc(self, server_id):
         await asyncio.sleep(20)
-        if self.queues[player.guild.id] and not self.players[player.guild.id].is_playing():
-            await player.disconnect()
+        if not self.players[server_id].is_playing():
+            await self.players[server_id].disconnect()
 
     async def soft_message_delete(self, server_id):
         await asyncio.sleep(20)
-        if server_id in self.queues and self.queues[server_id] and not self.players[server_id].is_playing():
+        if not self.players[server_id].is_playing():
             await self.messages[server_id].delete()
             self.messages.pop(server_id)
 
@@ -74,36 +74,39 @@ class MusicPlayerCog(commands.Cog):
     @commands.Cog.listener()
     async def on_wavelink_track_start(self, player: wavelink.player, track: Track):
         server_id = player.guild.id
-        if server_id in self.server_ctx:
-            ctx = self.server_ctx[server_id]
-            if server_id not in self.messages:
-                msg = await ctx.send(embed=self.player_embed(player))
-                self.messages[server_id] = msg
-                self.bot.loop.create_task(self.message_auto_update(server_id))
-                emojis = [':last_track_button:', ':reverse_button:', ':pause_button:', ':play_button:',
-                          ':next_track_button:', ':red_square:']
-                if not volume_lock:
-                    emojis.append(':muted_speaker:')
-                for e in emojis:
-                    await msg.add_reaction(emoji.emojize(e))
+        if server_id in self.server_ctx and server_id not in self.messages:
+            await self.player(server_id)
 
     @commands.Cog.listener()
     async def on_wavelink_track_end(self, player: wavelink.player, track: Track, reason):
         server_id = player.guild.id
         if not self.queues[server_id] and server_id not in self.loops:
             self.bot.loop.create_task(self.soft_message_delete(server_id))
-            self.bot.loop.create_task(self.soft_leave_vc(player))
+            self.bot.loop.create_task(self.soft_leave_vc(server_id))
         if server_id in self.loops:
             await player.play(track)
         else:
             await self.play_next(player, server_id)
+
+    async def player(self, server_id):
+        player = self.players[server_id]
+        ctx = self.server_ctx[server_id]
+        msg = await ctx.send(embed=self.player_embed(player))
+        self.messages[server_id] = msg
+        self.bot.loop.create_task(self.message_auto_update(server_id))
+        emojis = [':last_track_button:', ':reverse_button:', ':pause_button:', ':play_button:',
+                  ':next_track_button:', ':red_square:']
+        if not volume_lock:
+            emojis.append(':muted_speaker:')
+        for e in emojis:
+            await msg.add_reaction(emoji.emojize(e))
 
     def player_embed(self, player):
         track = player.track
         embed = Embed(title="🎧 Currently playing:",
                       description=f"[**{track.title}**]({track.uri})\n"
                                   f"**Length**: *{time_to_str(track.length)}*; **Volume**: *{int(player.volume)}*\n"
-                                  f"**{' ' * 40}Timeline**: *{short_time(player.position)}/{short_time(track.length)}* \n"
+                                  f"**{' ' * 40}Timeline**: *{short_time(player.position)}/{short_time(track.length)}*\n"
                                   f"```{render_bar(36, player.position, track.length)}```"
                                   f"{'*On repeat*' if player.guild.id in self.loops else ''}",
                       color=Colour.red())
@@ -162,8 +165,6 @@ class MusicPlayerCog(commands.Cog):
         await ctx.defer()
         await self.update_server_player(ctx, vc)
         server_id = ctx.guild.id
-        if server_id not in self.players:
-            return
         player = self.players[server_id]
         queue = self.queues[server_id]
         try:
@@ -208,8 +209,6 @@ class MusicPlayerCog(commands.Cog):
         await ctx.defer()
         await self.update_server_player(ctx, vc)
         server_id = ctx.guild.id
-        if server_id not in self.players:
-            return
         player = self.players[server_id]
         queue = self.queues[server_id]
         try:
@@ -228,6 +227,19 @@ class MusicPlayerCog(commands.Cog):
             await self.messages[server_id].delete()
             self.messages.pop(server_id)
         await self.play_next(player, server_id)
+
+    @cog_ext.cog_slash(name='spawn_player', description='Resend player body')
+    async def spawn_player(self, ctx):
+        await ctx.defer()
+        server_id = ctx.guild.id
+        if server_id not in self.players or not self.players[server_id].is_playing():
+            await ctx.send(embed=Embed(title=f"Nothing is playing", color=Colour.red()), delete_after=10)
+        else:
+            if server_id in self.messages:
+                self.server_ctx[server_id] = ctx
+                await self.messages[server_id].delete()
+                self.messages.pop(server_id)
+            await self.player(server_id)
 
     @cog_ext.cog_slash(name='move', description='Move to specified voice channel (default=<user voice channel>)',
                        options=[
