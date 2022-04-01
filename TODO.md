@@ -1,6 +1,6 @@
 # TODO list
 > - Voice Activity with date history
-> - On $Top get usernames from ctx but not from single querry per user
+> - On `Top` get usernames from ctx but not from single querry per user
 > - Most usable words
 > - Most usable words per user
 > - Graph of user points history (after voice activity fix preferable)
