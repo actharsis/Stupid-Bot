@@ -286,7 +286,7 @@ class MusicPlayerCog(commands.Cog):
                 if isinstance(item, wavelink.tracks.YouTubePlaylist):
                     embed = Embed(title=f"Playlist: '**{item.name}**' was deleted", color=Colour.blurple())
                 else:
-                    embed = Embed(title=f"Song: '**{item.name}**' was deleted", color=Colour.blurple())
+                    embed = Embed(title=f"Song: '**{item.title}**' was deleted", color=Colour.blurple())
             else:
                 embed = Embed(title="Wrong index given", color=Colour.red())
         else:
