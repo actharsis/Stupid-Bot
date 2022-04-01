@@ -33,4 +33,5 @@ Lavalink server for music bot features
 
 ## Launch
 Start Lavalink server by `java -jar "filename"`
+
 Start main.py by `py main.py`
