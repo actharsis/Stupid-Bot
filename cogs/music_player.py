@@ -4,11 +4,12 @@ import emoji
 import math
 import wavelink
 
-from config import volume_lock
 from collections import deque
+from config import volume_lock
 from discord import Embed
 from discord.colour import Colour
 from discord.ext import commands
+from discord_components import DiscordComponents, Select, SelectOption, Button, ButtonStyle
 from discord_slash import cog_ext
 from discord_slash.model import SlashCommandOptionType
 from discord_slash.utils.manage_commands import create_option
@@ -31,6 +32,27 @@ def render_bar(cells, time, duration):
     return bar
 
 
+def cut_text(text, limit):
+    if len(text) > limit:
+        return f"{text[:limit]}..."
+    return text
+
+
+def get_track(queue):
+    if isinstance(queue[0], wavelink.tracks.YouTubePlaylist):
+        playlist = queue[0]
+        if playlist.selected_track >= len(playlist.tracks):
+            queue.popleft()
+            return
+        track = playlist.tracks[playlist.selected_track]
+        playlist.selected_track += 1
+        if playlist.selected_track == len(playlist.tracks):
+            queue.popleft()
+    else:
+        track = queue.popleft()
+    return track
+
+
 class MusicPlayerCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -49,12 +71,12 @@ class MusicPlayerCog(commands.Cog):
                                             password='youwillpass')
 
     async def soft_leave_vc(self, server_id):
-        await asyncio.sleep(20)
+        await asyncio.sleep(5)
         if not self.players[server_id].is_playing():
             await self.players[server_id].disconnect()
 
     async def soft_message_delete(self, server_id):
-        await asyncio.sleep(20)
+        await asyncio.sleep(5)
         if not self.players[server_id].is_playing():
             await self.messages[server_id].delete()
             self.messages.pop(server_id)
@@ -62,7 +84,10 @@ class MusicPlayerCog(commands.Cog):
     async def message_auto_update(self, server_id):
         while server_id in self.messages:
             try:
-                await self.messages[server_id].edit(embed=self.player_embed(self.players[server_id]))
+                await self.messages[server_id].edit(
+                    embed=self.player_embed(self.players[server_id]),
+                    components=self.player_components(server_id)
+                )
             except AttributeError:
                 return
             await asyncio.sleep(3)
@@ -80,7 +105,7 @@ class MusicPlayerCog(commands.Cog):
     @commands.Cog.listener()
     async def on_wavelink_track_end(self, player: wavelink.player, track: Track, reason):
         server_id = player.guild.id
-        if not self.queues[server_id] and server_id not in self.loops:
+        if not player.is_playing():
             self.bot.loop.create_task(self.soft_message_delete(server_id))
             self.bot.loop.create_task(self.soft_leave_vc(server_id))
         if server_id in self.loops:
@@ -88,18 +113,66 @@ class MusicPlayerCog(commands.Cog):
         else:
             await self.play_next(player, server_id)
 
+    @commands.Cog.listener()
+    async def on_select_option(self, interaction):
+        await interaction.respond(type=7)
+        server_id = interaction.guild_id
+        for i in range(int(interaction.values[0])):
+            get_track(self.queues[server_id])
+        if server_id in self.loops:
+            self.loops.remove(server_id)
+        await self.players[server_id].stop()
+
+    @commands.Cog.listener()
+    async def on_button_click(self, interaction):
+        server_id = interaction.guild_id
+        player = self.players[server_id]
+        custom_id = interaction.custom_id
+        if custom_id == 'prev':
+            await player.seek(0)
+        elif custom_id == 'back':
+            cur = self.players[server_id].position
+            await player.seek(1000 * (cur - 30))
+        elif custom_id == 'pause':
+            if player.is_playing():
+                if player.is_paused():
+                    await player.resume()
+                else:
+                    await player.pause()
+        elif custom_id == 'forw':
+            cur = self.players[server_id].position
+            await player.seek(1000 * (cur + 30))
+        elif custom_id == 'next':
+            if server_id in self.loops:
+                self.loops.remove(server_id)
+            await player.stop()
+        elif custom_id == 'mute':
+            if player.volume > 0:
+                await player.set_volume(0)
+            else:
+                await player.set_volume(100)
+        elif custom_id == 'repeat':
+            if server_id in self.loops:
+                self.loops.remove(server_id)
+            else:
+                self.loops.add(server_id)
+        elif custom_id == 'stop':
+            if server_id in self.loops:
+                self.loops.remove(server_id)
+            self.queues[server_id].clear()
+            await player.stop()
+        elif custom_id == 'queue':
+            await interaction.respond(embed=self.build_queue_embed(server_id))
+            return
+        await interaction.respond(type=7)
+
     async def player(self, server_id):
         player = self.players[server_id]
         ctx = self.server_ctx[server_id]
-        msg = await ctx.send(embed=self.player_embed(player))
+        msg = await ctx.send(embed=self.player_embed(player),
+                             components=self.player_components(server_id))
         self.messages[server_id] = msg
         self.bot.loop.create_task(self.message_auto_update(server_id))
-        emojis = [':last_track_button:', ':reverse_button:', ':pause_button:', ':play_button:',
-                  ':next_track_button:', ':red_square:']
-        if not volume_lock:
-            emojis.append(':muted_speaker:')
-        for e in emojis:
-            await msg.add_reaction(emoji.emojize(e))
 
     def player_embed(self, player):
         track = player.track
@@ -113,25 +186,58 @@ class MusicPlayerCog(commands.Cog):
         embed.set_image(url=f'https://img.youtube.com/vi/{track.uri[32:]}/mqdefault.jpg')
         return embed
 
+    def player_components(self, server_id):
+        first_line = [
+            Button(custom_id="prev", style=ButtonStyle.blue, emoji=emoji.emojize(':last_track_button:')),
+            Button(custom_id="back", style=ButtonStyle.green, emoji=emoji.emojize(':reverse_button:')),
+            Button(custom_id="pause", style=ButtonStyle.green, emoji=emoji.emojize(':pause_button:')),
+            Button(custom_id="forw", style=ButtonStyle.green, emoji=emoji.emojize(':play_button:')),
+            Button(custom_id="next", style=ButtonStyle.blue, emoji=emoji.emojize(':next_track_button:'))
+        ]
+        volume = []
+        if not volume_lock:
+            if self.players[server_id].volume > 0:
+                volume = [Button(label="Mute", custom_id="mute", emoji=emoji.emojize(':muted_speaker:'))]
+            else:
+                volume = [Button(label="Unmute", custom_id="mute", emoji=emoji.emojize(':speaker_high_volume:'))]
+        else:
+            volume = [Button(label="Mute", custom_id="mute", disabled=True, emoji=emoji.emojize(':muted_speaker:'))]
+        second_line = volume + [Button(label="Loop", custom_id="repeat", emoji=emoji.emojize(':repeat_button:')),
+                                Button(label="List", custom_id="queue", emoji=emoji.emojize(':scroll:')),
+                                Button(label="Quit", custom_id="stop", style=ButtonStyle.red,
+                                       emoji=emoji.emojize(':black_large_square:'))]
+
+        options = []
+        for i, item in enumerate(self.queues[server_id]):
+            if isinstance(item, wavelink.tracks.YouTubePlaylist):
+                j = 0
+                while j + item.selected_track < len(item.tracks) and len(options) < 10:
+                    idx = item.selected_track + j
+                    track = item.tracks[idx]
+                    word = f"{cut_text(track.title, 48)}, {short_time(track.length)}"
+                    num = str(len(options))
+                    options.append(SelectOption(label=word, value=num, emoji=emoji.emojize(f':keycap_{num}:')))
+                    j += 1
+            else:
+                word = f"{cut_text(item.title, 48)}, {short_time(item.length)}"
+                num = str(len(options))
+                options.append(SelectOption(label=word, value=num, emoji=emoji.emojize(f':keycap_{num}:')))
+            if len(options) == 10:
+                break
+        if len(options) > 0:
+            queue = [Select(placeholder="Queue", options=options, custom_id="queue_list")]
+            return [first_line, second_line, queue]
+        return [first_line, second_line]
+
     async def play_next(self, player: wavelink.player, server_id):
         queue = self.queues[server_id]
         if queue:
-            if isinstance(queue[0], wavelink.tracks.YouTubePlaylist):
-                playlist = queue[0]
-                if playlist.selected_track >= len(playlist.tracks):
-                    queue.popleft()
-                    return
-                track = playlist.tracks[playlist.selected_track]
-                playlist.selected_track += 1
-                if playlist.selected_track == len(playlist.tracks):
-                    queue.popleft()
-            else:
-                track = queue.popleft()
+            track = get_track(queue)
             await player.play(track)
 
     async def update_server_player(self, ctx, vc):
         server_id = ctx.guild.id
-        self.server_ctx[server_id] = ctx
+        self.server_ctx[server_id] = ctx.channel
         try:
             if vc is None:
                 if server_id not in self.players or not self.players[server_id].is_connected():
@@ -179,6 +285,10 @@ class MusicPlayerCog(commands.Cog):
                                        color=Colour.green()),
                            delete_after=10.0)
             return
+        else:
+            await ctx.send(embed=Embed(title=f"Song '**{track.title}**' (*{short_time(track.length)}*) is now playing",
+                                       color=Colour.green()),
+                           delete_after=10.0)
         if server_id in self.messages:
             await self.messages[server_id].delete()
             self.messages.pop(server_id)
@@ -223,6 +333,10 @@ class MusicPlayerCog(commands.Cog):
                                        color=Colour.green()),
                            delete_after=10.0)
             return
+        else:
+            await ctx.send(embed=Embed(title=f"Playlist '**{playlist.name}**' is now playing",
+                                       color=Colour.green()),
+                           delete_after=10.0)
         if server_id in self.messages:
             await self.messages[server_id].delete()
             self.messages.pop(server_id)
@@ -334,10 +448,7 @@ class MusicPlayerCog(commands.Cog):
             embed = Embed(title="I've been quiet enough", color=Colour.blurple())
         await ctx.send(embed=embed, delete_after=10.0)
 
-    @cog_ext.cog_slash(name='queue', description='Show current song queue')
-    async def queue(self, ctx):
-        await ctx.defer()
-        server_id = ctx.guild.id
+    def build_queue_embed(self, server_id):
         if server_id not in self.queues or len(self.queues[server_id]) == 0:
             text = "*Empty*"
         else:
@@ -356,8 +467,12 @@ class MusicPlayerCog(commands.Cog):
                 else:
                     text += f"*{i}*. [**{item.title}**]({item.uri}), length: {int(item.length)} sec.\n"
                 text += '\n'
-        await ctx.send(embed=Embed(title="Queue:", description=text, color=Colour.blurple()),
-                       delete_after=30.0)
+        return Embed(title="Queue:", description=text, color=Colour.blurple())
+
+    @cog_ext.cog_slash(name='queue', description='Show current song queue')
+    async def queue(self, ctx):
+        await ctx.defer()
+        await ctx.send(embed=self.build_queue_embed(ctx.guild.id), delete_after=30.0)
 
     @cog_ext.cog_slash(name='seek', description='Move timeline to specific time in seconds',
                        options=[
@@ -410,7 +525,6 @@ class MusicPlayerCog(commands.Cog):
             if server_id in self.loops:
                 self.loops.remove(server_id)
                 embed = Embed(title="Replay disabled", color=Colour.blurple())
-
             else:
                 self.loops.add(server_id)
                 embed = Embed(title="On replay", color=Colour.blurple())
