@@ -347,10 +347,11 @@ class MusicPlayerCog(commands.Cog):
         await ctx.defer()
         server_id = ctx.guild.id
         if server_id not in self.players or not self.players[server_id].is_playing():
-            await ctx.send(embed=Embed(title=f"Nothing is playing", color=Colour.red()), delete_after=10)
+            await ctx.send(embed=Embed(title=f"Nothing is playing", color=Colour.red()), delete_after=5)
         else:
+            await ctx.send(embed=Embed(title=f"Player respawned", color=Colour.green()), delete_after=5)
             if server_id in self.messages:
-                self.server_ctx[server_id] = ctx
+                self.server_ctx[server_id] = ctx.channel
                 await self.messages[server_id].delete()
                 self.messages.pop(server_id)
             await self.player(server_id)
