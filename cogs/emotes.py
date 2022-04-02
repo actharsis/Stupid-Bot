@@ -144,7 +144,8 @@ class Emotes(commands.Cog):
                        ])
     async def add(self, ctx, emoji):
         ar = emoji.split(':')
-        if len(ar) == 3 and len(emoji) > 4 and emoji[0] == '<' and emoji[1] == ':' and emoji[-1] == '>':
+        if len(ar) == 3 and len(emoji) > 4 and emoji[0] == '<' and \
+                (emoji[1] == ':' or emoji[1] == 'a' and emoji[2] == ':') and emoji[-1] == '>':
             name = f":{ar[1]}:"
             if name not in self.reactions:
                 self.reactions[name] = emoji
