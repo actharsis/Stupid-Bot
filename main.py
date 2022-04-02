@@ -8,7 +8,7 @@ from discord_components import ComponentsBot
 client = ComponentsBot(command_prefix='$', intents=discord.Intents.all())
 slash = SlashCommand(client, sync_commands=True)
 
-initial_extensions = ['cogs.misc', 'cogs.pixiv', 'cogs.music_player', 'cogs.pidor', 'cogs.emotes']
+initial_extensions = ['cogs.misc', 'cogs.pixiv', 'cogs.music_player', 'cogs.pidor', 'cogs.emotes', 'cogs.anime']
 
 for extension in initial_extensions:
     client.load_extension(extension)
