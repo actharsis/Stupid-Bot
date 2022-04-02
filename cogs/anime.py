@@ -1,6 +1,8 @@
 import aiohttp
 import discord
 import io
+
+import emoji
 import requests
 import urllib.parse
 
@@ -44,7 +46,6 @@ class Anime(commands.Cog):
     async def on_raw_reaction_add(self, payload):
         channel = self.bot.get_channel(payload.channel_id)
         message = await channel.fetch_message(payload.message_id)
-        user = self.bot.get_user(payload.user_id)
         try:
             demojized = emoji.demojize(payload.emoji.name)
         except TypeError:
@@ -72,7 +73,7 @@ class Anime(commands.Cog):
                     async with session.get(best['video']) as resp:
                         if resp.status == 200:
                             data = io.BytesIO(await resp.read())
-                            await message.reply(file=discord.File(data, 'shortcut.mp4'))
+                            await message.reply(file=discord.File(data, "cut.mp4"))
 
 
 def setup(bot):
