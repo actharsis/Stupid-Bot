@@ -323,7 +323,7 @@ class PixivCog(commands.Cog):
             query = api.illust_recommended()
             embed = await self.show_page_embed(api, query, 'recommended', ctx.channel, limit,
                                                save_query=True, user_id=ctx.author.id)
-        except PixivError:
+        except:
             embed = Embed(title="Authentication required!\nCall /pixiv_login first for more info", color=Colour.red())
         await ctx.send(embed=embed, delete_after=5.0)
 
@@ -365,7 +365,7 @@ class PixivCog(commands.Cog):
             query = api.illust_ranking(mode=mode, date=from_date, offset=None)
             embed = await self.show_page_embed(api, query, 'best', ctx.channel, limit,
                                                save_query=True, user_id=ctx.author.id)
-        except PixivError:
+        except:
             embed = Embed(title="Authentication required!\nCall /pixiv_login first for more info", color=Colour.red())
         await ctx.send(embed=embed, delete_after=5.0)
 
@@ -403,7 +403,7 @@ class PixivCog(commands.Cog):
                 tags += '\n'
             embed = Embed(title="Tags on word '" + word + "' sorted from high to low popularity:",
                           description=tags, color=Colour.gold())
-        except PixivError:
+        except:
             embed = Embed(title="Authentication required!\nCall /pixiv_login first for more info", color=Colour.red())
         await ctx.send(embed=embed, delete_after=30.0)
 
@@ -503,7 +503,7 @@ class PixivCog(commands.Cog):
             embed = Embed(title="Find with word " + word + " called",
                           description=str(fetched) + " images fetched in total",
                           color=Colour.green())
-        except PixivError:
+        except:
             embed = Embed(title="Authentication required!\nCall /pixiv_login first for more info", color=Colour.red())
         await ctx.send(embed=embed, delete_after=10.0)
 
