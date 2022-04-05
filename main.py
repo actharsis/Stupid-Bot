@@ -1,16 +1,20 @@
-import nextcord
-from nextcord.ext import commands
-from config import token
+import pymongo
+from config import settings
+from discord_slash import SlashCommand
+from discord.ext.commands import Bot
+from discord import Intents
 
 # client init
-intents = nextcord.Intents.all()
+client = Bot(command_prefix='$', intents=Intents.all())
+slash = SlashCommand(client, sync_commands=True)
 
-activity = nextcord.Game(name="⑨Music⑨")
-client = commands.AutoShardedBot(command_prefix='$', case_insensitive=True, activity=activity, intents=intents)
+db_client = pymongo.MongoClient(settings['DBAddress'])
+db = db_client['TabaBotDB']
 
-extensions = ['cogs.misc', 'cogs.pixiv', 'cogs.pidor', 'cogs.emotes', 'cogs.music_player', 'cogs.anime']
+initial_extensions = ['cogs.misc', 'cogs.pixiv', 'cogs.music_player', 'cogs.pidor', 'cogs.emotes', 'cogs.anime']
 
-for extension in extensions:
+for extension in initial_extensions:
     client.load_extension(extension)
 
-client.run(token)
+# exec
+client.run(settings['token'], bot=True)

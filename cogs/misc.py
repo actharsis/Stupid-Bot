@@ -5,8 +5,9 @@ import urllib.request
 
 from datetime import datetime
 from modules.message_analysis import Analysis_module
-from nextcord import Embed, slash_command
-from nextcord.ext import commands
+from discord import Embed, File
+from discord.ext import commands
+from discord_slash import cog_ext
 
 
 start_time = datetime.now()
@@ -87,11 +88,11 @@ async def message_repeating(ctx):
 async def reference_reaction(ctx, client):
     if (not ctx.reference
             or ctx.reference.resolved.author.id != client.user.id
-            or ctx.user.id == client.user.id):
+            or ctx.author.id == client.user.id):
         return
 
     if replies:
-        special_replies = get_special_replies(ctx.user.id)
+        special_replies = get_special_replies(ctx.author.id)
         if special_replies:
             special_reply = random.choice(special_replies)
             if special_reply.startswith("&") or special_reply.startswith("№"):
@@ -119,19 +120,19 @@ class MiscCog(commands.Cog):
         await self.client.process_commands(ctx)
         self.analyzer.save_message(ctx)
 
-    @slash_command(name='start_time')
+    @cog_ext.cog_slash(name='StartTime')
     async def send_start_time(self, ctx):
         embed = Embed(title='Bot working since ' + str(start_time.strftime('%b %d %Y %H:%M:%S') + ' UTC+03:00'))
         await ctx.send(embed=embed)
 
-    @slash_command(name='top')
+    @cog_ext.cog_slash(name='Top')
     async def send_top(self, ctx):
-        await ctx.response.defer()
+        await ctx.defer()
         await self.analyzer.get_top(ctx)
 
-    @slash_command(name='voice')
+    @cog_ext.cog_slash(name='Voice')
     async def send_voice_activity(self, ctx):
-        await ctx.response.defer()
+        await ctx.defer()
         await self.analyzer.get_voice_activity(ctx)
 
 
