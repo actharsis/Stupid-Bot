@@ -120,11 +120,6 @@ class MiscCog(commands.Cog):
         await self.client.process_commands(ctx)
         self.analyzer.save_message(ctx)
 
-    @cog_ext.cog_slash(name='RenaStare')
-    async def rena_stare(self, ctx):
-        await ctx.defer()
-        await ctx.send(file=File(constants.GIF_DIRECTORY))
-
     @cog_ext.cog_slash(name='StartTime')
     async def send_start_time(self, ctx):
         embed = Embed(title='Bot working since ' + str(start_time.strftime('%b %d %Y %H:%M:%S') + ' UTC+03:00'))
