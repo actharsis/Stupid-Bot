@@ -1,11 +1,10 @@
-import discord
-
 from config import settings
 from discord_slash import SlashCommand
-from discord_components import ComponentsBot
+from discord.ext.commands import Bot
+from discord import Intents
 
 # client init
-client = ComponentsBot(command_prefix='$', intents=discord.Intents.all())
+client = Bot(command_prefix='$', intents=Intents.all())
 slash = SlashCommand(client, sync_commands=True)
 
 initial_extensions = ['cogs.misc', 'cogs.pixiv', 'cogs.music_player', 'cogs.pidor', 'cogs.emotes', 'cogs.anime']

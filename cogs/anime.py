@@ -50,18 +50,26 @@ class Anime(commands.Cog):
             demojized = emoji.demojize(payload.emoji.name)
         except TypeError:
             demojized = None
-        if message.author != self.bot.user and demojized == ":red_question_mark:" and \
+        url = None
+        if not message.author.bot and message.author != self.bot.user and demojized == ":red_question_mark:" and \
                 message.attachments is not None and len(message.attachments) == 1:
+            url = message.attachments[0].url
+        if url is None:
+            text = message.content.split()
+            if text:
+                text = text[0]
+            if text.startswith('http'):
+                url = text
+        if url is not None:
             request = requests.get("https://api.trace.moe/search?cutBorders&url={}".
-                                   format(urllib.parse.quote_plus(message.attachments[0].url))
+                                   format(urllib.parse.quote_plus(url))
                                    ).json()
-            print(request)
             if request['result']:
                 await channel.trigger_typing()
                 best = request['result'][0]
                 info = anilist(best['anilist'])
                 embed = Embed(title='Top Anime Result',
-                              description=f"Best match anime [**{info['data']['Media']['title']['english']}**]"
+                              description=f"Best anime match: [**{info['data']['Media']['title']['english']}**]"
                                           f"(https://anilist.co/anime/{best['anilist']})")
                 embed.add_field(name="Episode", value=f"{best['episode']}", inline=True)
                 embed.add_field(name="Time", value=f"{short_time(best['from'])}", inline=True)

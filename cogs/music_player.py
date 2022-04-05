@@ -5,15 +5,17 @@ import math
 import wavelink
 
 from collections import deque
-from config import volume_lock
+from config import volume_lock, safety
 from discord import Embed
 from discord.colour import Colour
 from discord.ext import commands
-from discord_components import DiscordComponents, Select, SelectOption, Button, ButtonStyle
+from discord_components import Select, SelectOption, Button, ButtonStyle
 from discord_slash import cog_ext
 from discord_slash.model import SlashCommandOptionType
 from discord_slash.utils.manage_commands import create_option
 from wavelink import Track, Node
+if safety:
+    from modules.predict import is_nsfw
 
 
 def time_to_str(time):
@@ -183,7 +185,10 @@ class MusicPlayerCog(commands.Cog):
                                   f"```{render_bar(36, player.position, track.length)}```"
                                   f"{'*On repeat*' if player.guild.id in self.loops else ''}",
                       color=Colour.red())
-        embed.set_image(url=f'https://img.youtube.com/vi/{track.uri[32:]}/mqdefault.jpg')
+        url = f'https://img.youtube.com/vi/{track.uri[32:]}/mqdefault.jpg'
+        if safety and is_nsfw(url):
+            url = f'https://img.youtube.com/vi/nter2axWgoA/mqdefault.jpg'
+        embed.set_image(url=url)
         return embed
 
     def player_components(self, server_id):
