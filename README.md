@@ -25,6 +25,14 @@ PIL
 
 emoji
 
+tensorflow
+
+tensorflow_hub
+
+selenium
+
+webdriver_manager
+
 java version "17.0.2"
 
 Lavalink server for music bot features
