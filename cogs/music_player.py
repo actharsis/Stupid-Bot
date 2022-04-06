@@ -75,6 +75,10 @@ class MusicPlayerCog(commands.Cog):
                                             port=2333,
                                             password='youwillpass')
 
+    @commands.Cog.listener()
+    async def on_ready(self):
+        await self.bot.change_presence(status=discord.Status.online, activity=discord.Game(name="⑨Music⑨"))
+
     async def soft_leave_vc(self, server_id):
         await asyncio.sleep(5)
         if not self.players[server_id].is_playing():
@@ -289,7 +293,7 @@ class MusicPlayerCog(commands.Cog):
                 if server_id not in self.players or not self.players[server_id].is_connected():
                     self.players[server_id] = await vc.connect(cls=wavelink.Player)
                 else:
-                    self.players[server_id].move_to(vc)
+                    await self.players[server_id].move_to(vc)
         except:
             await ctx.send(embed=Embed(title="Which voice channel?", color=Colour.green()), delete_after=10.0)
         if server_id not in self.queues:

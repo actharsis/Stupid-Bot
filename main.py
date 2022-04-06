@@ -5,7 +5,7 @@ from discord import Intents
 from modules.discord_components import ComponentsBot
 
 # client init
-client = ComponentsBot(command_prefix='$', intents=Intents.default())
+client = ComponentsBot(command_prefix='$', intents=Intents.all())
 slash = SlashCommand(client, sync_commands=True)
 # int_client = interactions.Client(token=token)
 
