@@ -527,7 +527,7 @@ class MusicPlayerCog(commands.Cog):
                 text += '\n'
         embed = Embed(description=text, color=Colour.blurple())
         embed.set_author(name="Queue", icon_url="https://cdn.discordapp.com/emojis/695126168680005662.webp")
-        return
+        return embed
 
     @cog_ext.cog_slash(name='queue', description='Show current song queue')
     async def queue(self, ctx):
