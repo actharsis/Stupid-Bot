@@ -25,6 +25,12 @@ PIL
 
 emoji
 
+java version "17.0.2"
+
+Lavalink server for music bot features
+
+**Optional**
+
 tensorflow
 
 tensorflow_hub
@@ -32,10 +38,6 @@ tensorflow_hub
 selenium
 
 webdriver_manager
-
-java version "17.0.2"
-
-Lavalink server for music bot features
 
 ## Launch
 Start Lavalink server by `java -jar "filename"`
