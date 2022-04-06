@@ -7,7 +7,7 @@ import random
 import time
 
 from PIL import Image
-from config import pixiv_refresh_token, pixiv_show_embed_illust, use_selenium
+from config import pixiv_show_embed_illust, use_selenium
 from discord import Embed, File
 from discord.colour import Colour
 from discord.ext import commands
@@ -446,7 +446,7 @@ class PixivCog(commands.Cog):
                            ),
                            create_option(
                                name="max_sanity_level",
-                               description="Filter illusts to a specified sanity level (default = 6, min = 2, max = 6)",
+                               description="Filter illusts to a specified sanity level (default = 5, min = 2, max = 6)",
                                option_type=SlashCommandOptionType.INTEGER,
                                required=False,
                            ),
@@ -471,7 +471,7 @@ class PixivCog(commands.Cog):
                                required=False,
                            )])
     async def find(self, ctx, word, match='exact_match_for_tags',
-                   limit=5, views=20000, rate=10.0, max_sanity_level=6,
+                   limit=5, views=20000, rate=10.0, max_sanity_level=5,
                    period=date.back_in_months(4 * 12), from_date=None):
         await ctx.defer()
         api = self.get_api(ctx.guild.id)
@@ -495,7 +495,8 @@ class PixivCog(commands.Cog):
                     selected_date = date.next_year(selected_date)
                     offset = 0
                     continue
-                good, total, alive = await self.show_page(api, query, channel, limit - shown, views, rate, max_sanity_level)
+                good, total, alive = await self.show_page(api, query, channel, limit - shown,
+                                                          views, rate, max_sanity_level)
                 shown += good
                 fetched += total
                 if alive:
@@ -627,7 +628,7 @@ class PixivCog(commands.Cog):
         timestamp = time.time()
         for server_id in self.tokens:
             if int(self.tokens[server_id]['time']) - timestamp < 1000:
-                token, ttl = refresh_token(pixiv_refresh_token)
+                token, ttl = refresh_token(self.tokens[server_id]['value'])
                 self.tokens[server_id]['time'] = str(int(timestamp + ttl))
                 self.api[token].auth(refresh_token=token)
                 print('pixiv token updated')
