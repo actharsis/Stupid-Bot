@@ -29,7 +29,7 @@ java version "17.0.2"
 
 Lavalink server for music bot features
 
-**Optional**
+***Optional***
 
 tensorflow
 
