@@ -8,9 +8,12 @@ import time
 
 from PIL import Image
 from config import pixiv_show_embed_illust, use_selenium
-from nextcord import Interaction, Embed, File, slash_command, SlashOption, TextInputStyle, ui
-from nextcord.colour import Colour
-from nextcord.ext import commands
+from discord import Embed, File
+from discord.colour import Colour
+from discord.ext import commands
+from discord_slash import cog_ext
+from discord_slash.model import SlashCommandOptionType
+from discord_slash.utils.manage_commands import create_option, create_choice
 from io import BytesIO
 from modules.pixiv_auth import refresh_token, selenium_login
 from pixivpy3 import *
@@ -34,95 +37,6 @@ class BetterAppPixivAPI(AppPixivAPI):
         }
         r = self.no_auth_requests_call('GET', url, params=params, req_auth=req_auth)
         return self.parse_result(r)
-
-
-class LoginModal(ui.Modal):
-    def __init__(self, ctx, pixiv) -> None:
-        super().__init__(title="Pixiv login form", custom_id="login_form")
-        self.ctx = ctx
-        self.pixiv = pixiv
-        self.add_item(
-            ui.TextInput(
-                label="Login",
-                placeholder="login@gmail.com",
-                custom_id="login",
-                style=TextInputStyle.short,
-                min_length=1,
-                required=True
-            )
-        )
-        self.add_item(
-            ui.TextInput(
-                label="Password",
-                placeholder="p@ssw0rd",
-                custom_id="password",
-                style=TextInputStyle.short,
-                min_length=1,
-                required=True
-            )
-        )
-
-    async def auth(self, login, password):
-        try:
-            token = await selenium_login(login, password)
-            if token is None:
-                await self.ctx.send(embed=Embed(title="Can't log in.\n"
-                                                      "Incorrect account details or captcha required :(\n"
-                                                      "Try pixiv token instead",
-                                                color=Colour.red()),
-                                    delete_after=10.0)
-                return
-            a = BetterAppPixivAPI(token=token)
-            server = str(self.ctx.guild.id)
-            self.pixiv.api[token] = a
-            self.pixiv.tokens[server] = {"value": token, "time": str(0)}
-            embed = Embed(title="Successfully logged in :)", color=Colour.green())
-            self.pixiv.save(tokens=True)
-        except:
-            embed = Embed(title="Can't log in with given token :(", color=Colour.red())
-        await self.ctx.send(embed=embed, delete_after=10.0)
-
-    async def callback(self, inter: Interaction) -> None:
-        login = self.children[0].value
-        password = self.children[1].value
-        await inter.response.send_message(embed=Embed(title="Task created", color=Colour.green()),
-                                          ephemeral=True, delete_after=5)
-        await self.auth(login, password)
-
-
-class TokenModal(ui.Modal):
-    def __init__(self, ctx, pixiv) -> None:
-        super().__init__(title="Pixiv token form", custom_id="login_form")
-        self.ctx = ctx
-        self.pixiv = pixiv
-        self.add_item(
-            ui.TextInput(
-                label="Refresh token",
-                placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-                custom_id="token",
-                style=TextInputStyle.short,
-                min_length=1,
-                required=True
-            )
-        )
-
-    async def auth(self, token):
-        try:
-            a = BetterAppPixivAPI(token=token)
-            server = str(self.ctx.guild.id)
-            self.pixiv.api[token] = a
-            self.pixiv.tokens[server] = {"value": token, "time": str(0)}
-            embed = Embed(title="Successfully logged in :)", color=Colour.green())
-            self.pixiv.save(tokens=True)
-        except:
-            embed = Embed(title="Can't login with given token :(", color=Colour.red())
-        await self.ctx.send(embed=embed, delete_after=10.0)
-
-    async def callback(self, inter: Interaction) -> None:
-        token = self.children[0].value
-        await inter.response.send_message(embed=Embed(title="Task created", color=Colour.green()),
-                                          ephemeral=True, delete_after=5)
-        await self.auth(token)
 
 
 class PixivCog(commands.Cog):
@@ -202,7 +116,6 @@ class PixivCog(commands.Cog):
             for idx, item in enumerate(illust.meta_pages):
                 url = item.image_urls.original
                 await self.send_illust(api, illust, url, chat, idx)
-            return True
         except:
             await chat.send(embed=Embed(title=f'Fail', color=Colour.red()), delete_after=5.0)
             return None
@@ -243,7 +156,7 @@ class PixivCog(commands.Cog):
         else:
             return None
 
-    @slash_command(name="pixiv_logout", description="Remove pixiv token from bot db")
+    @cog_ext.cog_slash(name="pixiv_logout", description="Remove pixiv token from bot db")
     async def pixiv_logout(self, ctx):
         server = str(ctx.guild.id)
         if server in self.tokens:
@@ -253,18 +166,67 @@ class PixivCog(commands.Cog):
             embed = Embed(title="This server is not logged in", color=Colour.gold())
         await ctx.send(embed=embed, delete_after=10.0)
 
-    @slash_command(name="pixiv_token", description="Log in to Pixiv via refresh token")
-    async def pixiv_token(self, ctx):
-        await ctx.response.send_modal(modal=TokenModal(ctx, self))
+    @cog_ext.cog_slash(name="pixiv_token", description="Log in to Pixiv via refresh token",
+                       options=[
+                           create_option(
+                               name="token",
+                               description="Your pixiv login",
+                               option_type=SlashCommandOptionType.STRING,
+                               required=True,
+                           )
+                       ])
+    async def pixiv_token(self, ctx, token):
+        await ctx.defer()
+        try:
+            a = BetterAppPixivAPI(token=token)
+            server = str(ctx.guild.id)
+            self.api[token] = a
+            self.tokens[server] = {"value": token, "time": str(0)}
+            embed = Embed(title="Successfully logged in :)", color=Colour.green())
+            self.save(tokens=True)
+        except:
+            embed = Embed(title="Can't login with given token :(", color=Colour.red())
+        await ctx.send(embed=embed, delete_after=10.0)
 
     if use_selenium:
-        @slash_command(name="pixiv_login", description="Log in to Pixiv")
-        async def pixiv_login(self, ctx):
-            await ctx.response.send_modal(modal=LoginModal(ctx, self))
+        @cog_ext.cog_slash(name="pixiv_login", description="Log in to Pixiv",
+                           options=[
+                               create_option(
+                                   name="login",
+                                   description="Your pixiv login",
+                                   option_type=SlashCommandOptionType.STRING,
+                                   required=True,
+                               ),
+                               create_option(
+                                   name="password",
+                                   description="Your pixiv password",
+                                   option_type=SlashCommandOptionType.STRING,
+                                   required=True,
+                               )
+                           ])
+        async def pixiv_login(self, ctx, login, password):
+            await ctx.defer()
+            try:
+                token = await selenium_login(login, password)
+                if token is None:
+                    await ctx.send(embed=Embed(title="Can't log in. Captcha required :(\n"
+                                                     "Try pixiv token instead",
+                                               color=Colour.red()),
+                                   delete_after=10.0)
+                    return
+                a = BetterAppPixivAPI(token=token)
+                server = str(ctx.guild.id)
+                self.api[token] = a
+                self.tokens[server] = {"value": token, "time": str(0)}
+                embed = Embed(title="Successfully logged in :)", color=Colour.green())
+                self.save(tokens=True)
+            except:
+                embed = Embed(title="Can't log in with given token :(", color=Colour.red())
+            await ctx.send(embed=embed, delete_after=10.0)
 
-    @slash_command(name="pixiv_status", description="Show pixiv connection status")
+    @cog_ext.cog_slash(name="pixiv_status", description="Show pixiv connection status")
     async def pixiv_status(self, ctx):
-        await ctx.response.defer()
+        await ctx.defer()
         server = str(ctx.guild.id)
         try:
             self.api[self.tokens[server]['value']].trending_tags_illust()
@@ -273,20 +235,21 @@ class PixivCog(commands.Cog):
             embed = Embed(title="Either you are not connected or there is a problem with the API", color=Colour.red())
         await ctx.send(embed=embed, delete_after=10.0)
 
-    @slash_command(name="start_auto_pixiv", description="Add channel to the auto Pixiv list")
-    async def add_auto_pixiv(self, ctx,
-                             refresh_time: int = SlashOption(
-                                 description="Delay between auto update in minutes (default = 180)",
-                                 required=False,
-                                 default=180,
-                                 min_value=60
-                             ),
-                             limit: int = SlashOption(
-                                 description="Amount of pictures will be displayed (default = 20)",
-                                 required=False,
-                                 default=20,
-                                 max_value=60
-                             )):
+    @cog_ext.cog_slash(name="start_auto_pixiv", description="Add channel to the auto Pixiv list",
+                       options=[
+                           create_option(
+                               name="refresh_time",
+                               description="Delay between auto update in minutes (default = 180)",
+                               option_type=SlashCommandOptionType.INTEGER,
+                               required=False,
+                           ),
+                           create_option(
+                               name="limit",
+                               description="Amount of pictures will be displayed (default = 20)",
+                               option_type=SlashCommandOptionType.INTEGER,
+                               required=False,
+                           )])
+    async def add_auto_pixiv(self, ctx, refresh_time=180, limit=20):
         channel_id = str(ctx.channel.id)
         if channel_id in self.channels.keys():
             embed = Embed(title="Auto Pixiv already running on this channel", color=Colour.gold())
@@ -296,7 +259,7 @@ class PixivCog(commands.Cog):
         await ctx.send(embed=embed)
         self.save(channels=True)
 
-    @slash_command(name="stop_auto_pixiv", description="Delete channel from the auto Pixiv list")
+    @cog_ext.cog_slash(name="stop_auto_pixiv", description="Delete channel from the auto Pixiv list")
     async def delete_auto_pixiv(self, ctx):
         channel_id = str(ctx.channel.id)
         if channel_id in self.channels.keys():
@@ -309,7 +272,7 @@ class PixivCog(commands.Cog):
         await ctx.send(embed=embed)
         self.save(channels=True, timers=True)
 
-    @slash_command(name="spoil_nsfw", description="Spoil NSFW in this server")
+    @cog_ext.cog_slash(name="spoil_nsfw", description="Spoil NSFW in this server")
     async def change_spoiler(self, ctx):
         server_id = ctx.guild.id
         if server_id not in self.spoilers:
@@ -321,82 +284,92 @@ class PixivCog(commands.Cog):
             embed = Embed(title="NSFW spoiler feature turned off", color=Colour.red())
         await ctx.send(embed=embed, delete_after=5.0)
 
-    @slash_command(name='next', description="Show the next page of your last 'best' or 'recommended' query")
-    async def next(self, ctx, limit: int = SlashOption(
-                                 description="Amount of pictures will be displayed (default = 20)",
-                                 required=False,
-                                 default=20,
-                                 max_value=30
-                             )):
-        await ctx.response.defer()
+    @cog_ext.cog_slash(name='next', description="Show the next page of your last 'best' or 'recommended' query",
+                       options=[
+                           create_option(
+                               name="limit",
+                               description="Amount of pictures will be displayed (default = 10)",
+                               option_type=SlashCommandOptionType.INTEGER,
+                               required=False,
+                           )])
+    async def next(self, ctx, limit=10):
+        await ctx.defer()
         api = self.get_api(ctx.guild.id)
-        if ctx.user.id in self.last_query:
-            next_qs = api.parse_qs(self.last_query[ctx.user.id].next_url)
+        if ctx.author.id in self.last_query:
+            next_qs = api.parse_qs(self.last_query[ctx.author.id].next_url)
             query = None
-            if self.last_type[ctx.user.id] == 'recommended':
+            if self.last_type[ctx.author.id] == 'recommended':
                 query = api.illust_recommended(**next_qs)
-            elif self.last_type[ctx.user.id] == 'best':
+            elif self.last_type[ctx.author.id] == 'best':
                 query = api.illust_ranking(**next_qs)
-            embed = await self.show_page_embed(api, query, self.last_type[ctx.user.id], ctx.channel,
-                                               limit, save_query=True, user_id=ctx.user.id)
+            embed = await self.show_page_embed(api, query, self.last_type[ctx.author.id], ctx.channel,
+                                               limit, save_query=True, user_id=ctx.author.id)
         else:
             embed = Embed(title="Previous request not found", color=Colour.red())
         await ctx.send(embed=embed, delete_after=5.0)
 
-    @slash_command(name='recommended', description="Show [10] recommended Pixiv illustrations")
-    async def recommended(self, ctx, limit: int = SlashOption(
-                                 description="Amount of pictures will be displayed (default = 10)",
-                                 required=False,
-                                 default=10,
-                                 max_value=30
-                             )):
-        await ctx.response.defer()
+    @cog_ext.cog_slash(name='recommended', description="Show [10] recommended Pixiv illustrations",
+                       options=[
+                           create_option(
+                               name="limit",
+                               description="Amount of pictures will be displayed (default = 10)",
+                               option_type=SlashCommandOptionType.INTEGER,
+                               required=False,
+                           )])
+    async def recommended(self, ctx, limit=10):
+        await ctx.defer()
         api = self.get_api(ctx.guild.id)
         try:
             query = api.illust_recommended()
             embed = await self.show_page_embed(api, query, 'recommended', ctx.channel, limit,
-                                               save_query=True, user_id=ctx.user.id)
+                                               save_query=True, user_id=ctx.author.id)
         except:
             embed = Embed(title="Authentication required!\nCall /pixiv_login first for more info", color=Colour.red())
         await ctx.send(embed=embed, delete_after=5.0)
 
-    @slash_command(name='best', description='Find best [10] rated illustrations with specific mode and date')
-    async def best(self, ctx,
-                   mode: str = SlashOption(description="Specify one of the types",
-                                           choices={"Day": "day",
-                                                    "Week": "week",
-                                                    "Month": "month",
-                                                    "Day Male likes": "day_male",
-                                                    "Day Female likes": "day_female",
-                                                    "Day Ecchi": "day_r18",
-                                                    "Day Male likes Ecchi": "day_male_r18",
-                                                    "Week Ecchi": "week_r18",
-                                                    },
-                                           required=False,
-                                           default="month"
-                                           ),
-                   limit: int = SlashOption(
-                       description="Amount of pictures will be displayed (default = 10)",
-                       required=False,
-                       default=10,
-                       max_value=30
-                   ),
-                   from_date: str = SlashOption(
-                       description="Date of sample in format: YYYY-MM-DD",
-                       required=False,
-                       default=None
-                   )):
-        await ctx.response.defer()
+    @cog_ext.cog_slash(name='best', description='Find best [10] rated illustrations with specific mode and date',
+                       options=[
+                           create_option(
+                               name="mode",
+                               description="Specify one of the types",
+                               option_type=SlashCommandOptionType.STRING,
+                               required=False,
+                               choices=[
+                                   create_choice("day", "Day"),
+                                   create_choice("week", "Week"),
+                                   create_choice("month", "Month"),
+                                   create_choice("day_male", "Day Male likes"),
+                                   create_choice("day_female", "Day Female likes"),
+                                   create_choice("day_r18", "Day Ecchi"),
+                                   create_choice("day_male_r18", "Day Male likes Ecchi"),
+                                   create_choice("week_r18", "Week Ecchi"),
+                               ]
+                           ),
+                           create_option(
+                               name="limit",
+                               description="Amount of pictures will be displayed (default = 10)",
+                               option_type=SlashCommandOptionType.INTEGER,
+                               required=False
+                           ),
+                           create_option(
+                               name="from_date",
+                               description="Date of sample in format: YYYY-MM-DD",
+                               option_type=SlashCommandOptionType.STRING,
+                               required=False
+                           )
+                       ])
+    async def best(self, ctx, mode='month', limit=10, from_date=None):
+        await ctx.defer()
         api = self.get_api(ctx.guild.id)
         try:
             query = api.illust_ranking(mode=mode, date=from_date, offset=None)
             embed = await self.show_page_embed(api, query, 'best', ctx.channel, limit,
-                                               save_query=True, user_id=ctx.user.id)
+                                               save_query=True, user_id=ctx.author.id)
         except:
             embed = Embed(title="Authentication required!\nCall /pixiv_login first for more info", color=Colour.red())
         await ctx.send(embed=embed, delete_after=5.0)
 
-    @slash_command(name='when', description='Show remaining time until new illustrations')
+    @cog_ext.cog_slash(name='when', description='Show remaining time until new illustrations')
     async def time_to_update(self, ctx):
         channel_id = str(ctx.channel.id)
         if channel_id in self.timers.keys() and channel_id in self.channels:
@@ -409,10 +382,16 @@ class PixivCog(commands.Cog):
             embed = Embed(title="Timer has not started", color=Colour.gold())
         await ctx.send(embed=embed, delete_after=10.0)
 
-    @slash_command(name='tag', description='Get tagged name of word')
-    async def tag(self, ctx,
-                  word: str = SlashOption(description="Word, that will be translated to most popular related tag",
-                                          required=True)):
+    @cog_ext.cog_slash(name='tag', description='Get tagged name of word',
+                       options=[
+                           create_option(
+                               name="word",
+                               description="Word, that will be translated to most popular related tag",
+                               option_type=SlashCommandOptionType.STRING,
+                               required=True
+                           )
+                       ])
+    async def tag(self, ctx, word):
         api = self.get_api(ctx.guild.id)
         try:
             query = api.search_autocomplete(word)
@@ -428,75 +407,82 @@ class PixivCog(commands.Cog):
             embed = Embed(title="Authentication required!\nCall /pixiv_login first for more info", color=Colour.red())
         await ctx.send(embed=embed, delete_after=30.0)
 
-    @slash_command(name='find', description='Find illustrations that satisfy the filters from random point of time')
-    async def find(self, ctx,
-                   word: str = SlashOption(
-                       description="Find by specific word",
-                       required=True
-                   ),
-                   match: str = SlashOption(
-                       description="Word match rule (default = exact_match_for_tags)",
-                       default="exact_match_for_tags",
-                       choices={
-                           "Partial match for tags": "partial_match_for_tags",
-                           "Exact match for tags": "exact_match_for_tags",
-                           "Title and caption": "title_and_caption"
-                       },
-                       required=False
-                   ),
-                   limit: int = SlashOption(
-                       description="Maximum amount of pictures that will be shown (default 5, maximum = 20)",
-                       default=5,
-                       min_value=1,
-                       max_value=20,
-                       required=False
-                   ),
-                   views: int = SlashOption(
-                       description="Required minimum amount of views (default = 10000)",
-                       default=10000,
-                       min_value=0,
-                       max_value=100000,
-                       required=False
-                   ),
-                   rate: float = SlashOption(
-                       description="Required minimum percent of views/bookmarks (default = 10)",
-                       default=10,
-                       min_value=0,
-                       max_value=75,
-                       required=False
-                   ),
-                   max_sanity_level: int = SlashOption(
-                       description="Filter illusts to a specified sanity level (default = 5, min = 2, max = 6)",
-                       default=5,
-                       min_value=2,
-                       max_value=6,
-                       required=False
-                   ),
-                   period: str = SlashOption(
-                       description="Random Date period (no impact if from_date given)",
-                       choices={
-                           "new": date.back_in_months(1 * 12),
-                           "2 years range": date.back_in_months(2 * 12),
-                           "3 years range": date.back_in_months(3 * 12),
-                           "6 years range": date.back_in_months(6 * 12),
-                           "9 years range": date.back_in_months(9 * 12),
-                           "all time period" : date.back_in_months(14 * 12)
-                       },
-                       default=date.back_in_months(4 * 12),
-                       required=False
-                   ),
-                   from_date: str = SlashOption(
-                       description="Fixed date in format YYYY-MM-DD from which search will be initialized",
-                       default=None,
-                       required=False
-                   )):
-        await ctx.response.defer()
+    @cog_ext.cog_slash(name='find', description='Find illustrations that satisfy the filters from random point of time',
+                       options=[
+                           create_option(
+                               name="word",
+                               description="Find by specific word",
+                               option_type=SlashCommandOptionType.STRING,
+                               required=True,
+                           ),
+                           create_option(
+                               name="match",
+                               description="Word match rule (default = partial_match_for_tags)",
+                               option_type=SlashCommandOptionType.STRING,
+                               required=False,
+                               choices=[
+                                   create_choice("partial_match_for_tags", "partial_match_for_tags"),
+                                   create_choice("exact_match_for_tags", "exact_match_for_tags"),
+                                   create_choice("title_and_caption", "title_and_caption")
+                               ]
+                           ),
+                           create_option(
+                               name="limit",
+                               description="Maximum amount of pictures that will be shown (default 5, maximum = 20)",
+                               option_type=SlashCommandOptionType.INTEGER,
+                               required=False,
+                           ),
+                           create_option(
+                               name="views",
+                               description="Required minimum amount of views (default = 20000)",
+                               option_type=SlashCommandOptionType.INTEGER,
+                               required=False,
+                           ),
+                           create_option(
+                               name="rate",
+                               description="Required minimum percent of views/bookmarks (default = 10)",
+                               option_type=SlashCommandOptionType.FLOAT,
+                               required=False,
+                           ),
+                           create_option(
+                               name="max_sanity_level",
+                               description="Filter illusts to a specified sanity level (default = 5, min = 2, max = 6)",
+                               option_type=SlashCommandOptionType.INTEGER,
+                               required=False,
+                           ),
+                           create_option(
+                               name="period",
+                               description="Random Date period (no impact if since date given)",
+                               option_type=SlashCommandOptionType.STRING,
+                               required=False,
+                               choices=[
+                                   create_choice(date.back_in_months(1 * 12), "new"),
+                                   create_choice(date.back_in_months(2 * 12), "2 years range"),
+                                   create_choice(date.back_in_months(3 * 12), "3 years range"),
+                                   create_choice(date.back_in_months(6 * 12), "6 years range"),
+                                   create_choice(date.back_in_months(9 * 12), "9 years range"),
+                                   create_choice(date.back_in_months(14 * 12), "all time period"),
+                               ]
+                           ),
+                           create_option(
+                               name="from_date",
+                               description="Fixed date in format YYYY-MM-DD from which search will be initialized",
+                               option_type=SlashCommandOptionType.STRING,
+                               required=False,
+                           )])
+    async def find(self, ctx, word, match='exact_match_for_tags',
+                   limit=5, views=20000, rate=10.0, max_sanity_level=5,
+                   period=date.back_in_months(4 * 12), from_date=None):
+        await ctx.defer()
         api = self.get_api(ctx.guild.id)
         channel = ctx.channel
         try:
             word = api.search_autocomplete(word).tags[0].name
         except:
             pass
+        max_sanity_level = max(2, max_sanity_level)
+        max_sanity_level = min(6, max_sanity_level)
+        limit = min(limit, 20)
         selected_date = date.random(period, date.current(), random.random())
         if date.is_valid(from_date):
             selected_date = from_date
@@ -522,10 +508,17 @@ class PixivCog(commands.Cog):
             embed = Embed(title="Authentication required!\nCall /pixiv_login first for more info", color=Colour.red())
         await ctx.send(embed=embed, delete_after=10.0)
 
-    @slash_command(name='illust', description='Get pixiv illustration by ID')
-    async def get_illust(self, ctx,
-                         idx: str = SlashOption(description="Illustration ID", required=True)):
-        await ctx.response.defer()
+    @cog_ext.cog_slash(name='illust', description='Get pixiv illustration by ID',
+                       options=[
+                           create_option(
+                               name="idx",
+                               description="Illustration ID",
+                               option_type=SlashCommandOptionType.STRING,
+                               required=True
+                           )
+                       ])
+    async def get_illust(self, ctx, idx):
+        await ctx.defer()
         await self.show_illust(self.get_api(ctx.guild.id), idx, ctx)
 
     @commands.Cog.listener()
@@ -541,21 +534,9 @@ class PixivCog(commands.Cog):
         except TypeError:
             demojized = None
         if payload.user_id != self.bot.user.id:
-            if message.attachments is not None and message.author == self.bot.user:
-                illust_id = None
-                lock_info = False
-                if len(message.attachments) == 1:
-                    illust_id = message.attachments[0].filename.split('.')[0].split('_')[-1]
-                    if not illust_id.isnumeric():
-                        illust_id = None
-                try:
-                    if message.embeds[0].fields[1].name == "Pixiv ID":
-                        illust_id = message.embeds[0].fields[1].value
-                        lock_info = True
-                except:
-                    pass
-                if illust_id is None:
-                    return
+            if message.attachments is not None and len(message.attachments) == 1 and \
+                    message.author == self.bot.user:
+                illust_id = message.attachments[0].filename.split('.')[0].split('_')[-1]
                 emojis = {':red_heart:', ':growing_heart:', ':magnifying_glass_tilted_left:', ':seedling:',
                           ':broken_heart:', ':red_question_mark:', ':elephant:', ':face_vomiting:'}
                 if demojized in emojis:
@@ -576,19 +557,19 @@ class PixivCog(commands.Cog):
                     except:
                         await message.add_reaction(emoji.emojize(':thumbs_down:'))
                 elif demojized == ':magnifying_glass_tilted_left:':
-                    try:
+                    r = await self.show_illust(api, illust_id, message.channel)
+                    if r:
                         await message.add_reaction(emoji.emojize(':thumbs_up:'))
-                        await self.show_illust(api, illust_id, message.channel)
-                    except:
+                    else:
                         await message.add_reaction(emoji.emojize(':thumbs_down:'))
                 elif demojized == ':seedling:':
                     try:
-                        query = api.illust_related(illust_id)
                         await message.add_reaction(emoji.emojize(':thumbs_up:'))
+                        query = api.illust_related(illust_id)
                         await self.show_page(api, query, message.channel, limit=5)
                     except:
                         await message.add_reaction(emoji.emojize(':thumbs_down:'))
-                elif demojized == ':face_vomiting:' and not lock_info:
+                elif demojized == ':face_vomiting:':
                     await message.delete()
                 elif demojized == ':broken_heart:':
                     try:
@@ -599,7 +580,7 @@ class PixivCog(commands.Cog):
                         await message.add_reaction(emoji.emojize(':broken_heart:'))
                     except:
                         await message.add_reaction(emoji.emojize(':thumbs_down:'))
-                elif demojized == ':red_question_mark:' and not lock_info:
+                elif demojized == ':red_question_mark:':
                     try:
                         await message.add_reaction(emoji.emojize(':thumbs_up:'))
                         illust = api.illust_detail(illust_id).illust
@@ -610,14 +591,12 @@ class PixivCog(commands.Cog):
                                 tags += f' - {tag.translated_name}'
                             tags += ', '
                         tags = tags[:-2]
-                        embed = Embed(title="Illustration info:", color=Colour.green())
-                        embed.add_field(name="Title:",
-                                        value=f"[{illust.title}](https://www.pixiv.net/en/artworks/{illust.id})",
-                                        inline=False)
-                        embed.add_field(name="ID:", value=illust_id, inline=True)
-                        embed.add_field(name="Views:", value=illust.total_view, inline=True)
-                        embed.add_field(name="Bookmarks:", value=illust.total_bookmarks, inline=True)
-                        embed.add_field(name="Tags:", value=tags, inline=False)
+                        embed = Embed(title="Illustration info:",
+                                      description=f'Title: [{illust.title}](https://www.pixiv.net/en/artworks/{illust.id})'
+                                                  f', ID: {illust.id}'
+                                                  f'\n\nViews: {illust.total_view}, Bookmarks: {illust.total_bookmarks}'
+                                                  f'\n\nTags: {tags}',
+                                      color=Colour.green())
                         await message.edit(embed=embed, suppress=False)
                         await asyncio.sleep(20)
                         await message.edit(suppress=True)
