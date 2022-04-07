@@ -190,19 +190,7 @@ class MusicPlayerCog(commands.Cog):
             self.queues[server_id].clear()
             await player.stop()
         elif custom_id == 'history':
-            text = ""
-            if server_id not in self.history or not self.history[server_id]:
-                text = "*Empty*"
-            else:
-                for i, item in enumerate(reversed(self.history[server_id])):
-                    text += f"*{i}*. [**{item['track'].title}**]({item['track'].uri}), " \
-                            f"length: *{short_time(item['track'].length)}*"
-                    if item['cnt'] > 1:
-                        text += f", **{item['cnt']}**x"
-                    text += '\n\n'
-            embed = Embed(description=text)
-            embed.set_author(name="History:", icon_url="https://cdn.discordapp.com/emojis/695126168680005662.webp")
-            await interaction.respond(embed=embed)
+            await interaction.respond(embed=self.build_history_embed(server_id))
             return
         await interaction.respond(type=7)
 
@@ -296,8 +284,10 @@ class MusicPlayerCog(commands.Cog):
                     await self.players[server_id].move_to(vc)
         except:
             await ctx.send(embed=Embed(title="Which voice channel?", color=Colour.green()), delete_after=10.0)
+            return 0
         if server_id not in self.queues:
             self.queues[server_id] = deque()
+        return 1
 
     @cog_ext.cog_slash(name='play', description='Play a song from Youtube',
                        options=[
@@ -316,7 +306,8 @@ class MusicPlayerCog(commands.Cog):
                        ])
     async def play(self, ctx, track, vc=None):
         await ctx.defer()
-        await self.update_server_player(ctx, vc)
+        if not await self.update_server_player(ctx, vc):
+            return
         server_id = ctx.guild.id
         player = self.players[server_id]
         queue = self.queues[server_id]
@@ -364,7 +355,8 @@ class MusicPlayerCog(commands.Cog):
                        ])
     async def playlist(self, ctx, uri, offset=0, vc=None):
         await ctx.defer()
-        await self.update_server_player(ctx, vc)
+        if not await self.update_server_player(ctx, vc):
+            return
         server_id = ctx.guild.id
         player = self.players[server_id]
         queue = self.queues[server_id]
@@ -533,10 +525,30 @@ class MusicPlayerCog(commands.Cog):
         embed.set_author(name="Queue", icon_url="https://cdn.discordapp.com/emojis/695126168680005662.webp")
         return embed
 
+    def build_history_embed(self, server_id):
+        text = ""
+        if server_id not in self.history or not self.history[server_id]:
+            text = "*Empty*"
+        else:
+            for i, item in enumerate(reversed(self.history[server_id])):
+                text += f"*{i}*. [**{item['track'].title}**]({item['track'].uri}), " \
+                        f"length: *{short_time(item['track'].length)}*"
+                if item['cnt'] > 1:
+                    text += f", **{item['cnt']}**x"
+                text += '\n\n'
+        embed = Embed(description=text)
+        embed.set_author(name="History:", icon_url="https://cdn.discordapp.com/emojis/695126168680005662.webp")
+        return embed
+
     @cog_ext.cog_slash(name='queue', description='Show current song queue')
     async def queue(self, ctx):
         await ctx.defer()
         await ctx.send(embed=self.build_queue_embed(ctx.guild.id), delete_after=30.0)
+
+    @cog_ext.cog_slash(name='history', description='Show song history')
+    async def history(self, ctx):
+        await ctx.defer()
+        await ctx.send(embed=self.build_history_embed(ctx.guild.id), delete_after=30.0)
 
     @cog_ext.cog_slash(name='seek', description='Move timeline to specific time in seconds',
                        options=[
@@ -606,64 +618,11 @@ class MusicPlayerCog(commands.Cog):
             return
 
         user = self.bot.get_user(payload.user_id)
-        emojis = {':last_track_button:', ':reverse_button:', ':pause_button:', ':play_button:',
-                  ':next_track_button:', ':red_square:', ':repeat_button:'}
-        if not volume_lock:
-            emojis.add(':muted_speaker:')
-            emojis.add(':speaker_high_volume:')
-        try:
-            demojized = emoji.demojize(payload.emoji.name)
-        except TypeError:
-            return
         if server_id not in self.messages or self.messages[server_id].id != message.id:
             return
         if payload.user_id != self.bot.user.id:
-            if demojized in emojis:
-                try:
-                    player = self.players[server_id]
-                    if demojized == ':last_track_button:':
-                        await player.seek(0)
-                    elif demojized == ':reverse_button:':
-                        cur = self.players[server_id].position
-                        await player.seek(1000 * (cur - 30))
-                    elif demojized == ':pause_button:':
-                        if player.is_playing():
-                            if player.is_paused():
-                                await player.resume()
-                            else:
-                                await player.pause()
-                    elif demojized == ':play_button:':
-                        cur = self.players[server_id].position
-                        await player.seek(1000 * (cur + 30))
-                    elif demojized == ':next_track_button:':
-                        if server_id in self.loops:
-                            self.loops.remove(server_id)
-                        await player.stop()
-                    elif demojized == ':red_square:':
-                        if server_id in self.loops:
-                            self.loops.remove(server_id)
-                        self.queues[server_id].clear()
-                        await player.stop()
-                    elif demojized == ':muted_speaker:':
-                        await message.remove_reaction(emoji.emojize(':muted_speaker:'), self.bot.user)
-                        await message.add_reaction(emoji.emojize(':speaker_high_volume:'))
-                        await player.set_volume(0)
-                    elif demojized == ':speaker_high_volume:':
-                        await message.remove_reaction(emoji.emojize(':speaker_high_volume:'), self.bot.user)
-                        await message.add_reaction(emoji.emojize(':muted_speaker:'))
-                        await player.set_volume(100)
-                    elif demojized == ':repeat_button:':
-                        if server_id in self.loops:
-                            self.loops.remove(server_id)
-                        else:
-                            self.loops.add(server_id)
-                    await message.add_reaction(emoji.emojize(':thumbs_up:'))
-                except:
-                    await message.add_reaction(emoji.emojize(':thumbs_down:'))
-            else:
-                await message.add_reaction(emoji.emojize(':angry_face:'))
-            await message.remove_reaction(payload.emoji, user)
-        elif demojized not in emojis:
+            await message.add_reaction(emoji.emojize(':angry_face:'))
+        else:
             await asyncio.sleep(2)
             try:
                 await message.remove_reaction(payload.emoji, user)
