@@ -73,9 +73,9 @@ class Analysis_module:
 
     async def get_top(self, ctx):
         messages = models.MessageModel.select(models.MessageModel.author_id, models.MessageModel.message_content, 
-            models.MessageModel.attachment, models.MessageModel.server_id).where(models.MessageModel.server_id == ctx.guild.id)
-        voice_activities = activity_history = models.VoiceActivityModel.select(models.VoiceActivityModel.user_id, 
-                models.VoiceActivityModel.activity_minutes, models.VoiceActivityModel.guild_id)
+            models.MessageModel.attachment, models.MessageModel.server_id).where(models.MessageModel.server_id == ctx.guild.id, models.MessageModel.is_bot == 0)
+        voice_activities = models.VoiceActivityModel.select(models.VoiceActivityModel.user_id, 
+                models.VoiceActivityModel.activity_minutes, models.VoiceActivityModel.guild_id).where(models.VoiceActivityModel.guild_id == ctx.guild.id)
         authors = self.get_authors(messages)
         user_scores = {a: self.get_user_points(messages, voice_activities, ctx.guild.id, a) for a in authors}
         answer = await self.create_userscores_answer(user_scores)
