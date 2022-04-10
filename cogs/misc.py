@@ -8,6 +8,7 @@ from modules.message_analysis import Analysis_module
 from discord import Embed, File
 from discord.ext import commands
 from discord_slash import cog_ext
+from main import db
 
 
 start_time = datetime.now()
@@ -105,7 +106,7 @@ async def reference_reaction(ctx, client):
 class MiscCog(commands.Cog):
     def __init__(self, bot):
         self.client = bot
-        self.analyzer = Analysis_module(self.client)
+        self.analyzer = Analysis_module(self.client, db)
 
     @commands.Cog.listener()
     async def on_message(self, ctx):
@@ -128,7 +129,7 @@ class MiscCog(commands.Cog):
     @cog_ext.cog_slash(name='Top')
     async def send_top(self, ctx):
         await ctx.defer()
-        await self.analyzer.get_top(ctx)
+        await self.analyzer.get_userscores(ctx)
 
     @cog_ext.cog_slash(name='Voice')
     async def send_voice_activity(self, ctx):
