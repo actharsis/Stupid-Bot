@@ -5,10 +5,8 @@ import urllib.request
 
 from datetime import datetime
 from modules.message_analysis import Analysis_module
-from discord import Embed, File
-from discord.ext import commands
-from discord_slash import cog_ext
-from main import db
+from nextcord import Embed, slash_command
+from nextcord.ext import commands
 
 
 start_time = datetime.now()
@@ -89,11 +87,11 @@ async def message_repeating(ctx):
 async def reference_reaction(ctx, client):
     if (not ctx.reference
             or ctx.reference.resolved.author.id != client.user.id
-            or ctx.author.id == client.user.id):
+            or ctx.user.id == client.user.id):
         return
 
     if replies:
-        special_replies = get_special_replies(ctx.author.id)
+        special_replies = get_special_replies(ctx.user.id)
         if special_replies:
             special_reply = random.choice(special_replies)
             if special_reply.startswith("&") or special_reply.startswith("№"):
@@ -106,7 +104,7 @@ async def reference_reaction(ctx, client):
 class MiscCog(commands.Cog):
     def __init__(self, bot):
         self.client = bot
-        self.analyzer = Analysis_module(self.client, db)
+        self.analyzer = Analysis_module(self.client)
 
     @commands.Cog.listener()
     async def on_message(self, ctx):
@@ -121,19 +119,19 @@ class MiscCog(commands.Cog):
         await self.client.process_commands(ctx)
         self.analyzer.save_message(ctx)
 
-    @cog_ext.cog_slash(name='StartTime')
+    @slash_command(name='start_time')
     async def send_start_time(self, ctx):
         embed = Embed(title='Bot working since ' + str(start_time.strftime('%b %d %Y %H:%M:%S') + ' UTC+03:00'))
         await ctx.send(embed=embed)
 
-    @cog_ext.cog_slash(name='Top')
+    @slash_command(name='top')
     async def send_top(self, ctx):
-        await ctx.defer()
-        await self.analyzer.get_userscores(ctx)
+        await ctx.response.defer()
+        await self.analyzer.get_top(ctx)
 
-    @cog_ext.cog_slash(name='Voice')
+    @slash_command(name='voice')
     async def send_voice_activity(self, ctx):
-        await ctx.defer()
+        await ctx.response.defer()
         await self.analyzer.get_voice_activity(ctx)
 
 

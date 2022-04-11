@@ -35,7 +35,7 @@ REQUESTS_KWARGS = {
 }
 
 
-def refresh_token(token):
+def refresh_token(refresh_token):
     response = requests.post(
         AUTH_TOKEN_URL,
         data={
@@ -43,18 +43,18 @@ def refresh_token(token):
             "client_secret": CLIENT_SECRET,
             "grant_type": "refresh_token",
             "include_policy": "true",
-            "refresh_token": token,
+            "refresh_token": refresh_token,
         },
         headers={"User-Agent": USER_AGENT},
     )
     data = response.json()
     ttl = 0
     try:
-        token = data["refresh_token"]
+        refresh_token = data["refresh_token"]
         ttl = data.get("expires_in", 0)
     except KeyError:
         print("unable to get pixiv refresh token!")
-    return token, ttl
+    return refresh_token, ttl
 
 
 def s256(data):
@@ -84,9 +84,9 @@ async def selenium_login(log, pwd):
 
     driver.get(f"{LOGIN_URL}?{urlencode(login_params)}")
     log_field = driver.find_element(By.CSS_SELECTOR,
-                                    '#LoginComponent > form > div.input-field-group > div:nth-child(1)')
+                                  '#LoginComponent > form > div.input-field-group > div:nth-child(1)')
     pass_field = driver.find_element(By.CSS_SELECTOR,
-                                     '#LoginComponent > form > div.input-field-group > div:nth-child(2)')
+                                  '#LoginComponent > form > div.input-field-group > div:nth-child(2)')
     button = driver.find_element(By.CSS_SELECTOR, '#LoginComponent > form > button')
     ActionChains(driver).\
         send_keys_to_element(log_field, log).\
@@ -95,7 +95,7 @@ async def selenium_login(log, pwd):
     #
 
     ok = False
-    for i in range(30):
+    for i in range(60):
         # wait for login
         if driver.current_url[:40] == "https://accounts.pixiv.net/post-redirect":
             ok = True

@@ -7,8 +7,6 @@ import urllib.parse
 
 from nextcord import Embed, File
 from nextcord.ext import commands
-from saucenao_api import AIOSauceNao
-from config import saucenao_token
 
 
 def anilist(idx):
@@ -59,35 +57,14 @@ class Anime(commands.Cog):
             text = message.content.split()
             if text:
                 text = text[0]
-            else:
-                return
             if text.startswith('http'):
                 url = text
         if url is not None:
             request = requests.get("https://api.trace.moe/search?cutBorders&url={}".
                                    format(urllib.parse.quote_plus(url))
                                    ).json()
-            sauce = None
-            try:
-                sauce = await AIOSauceNao(saucenao_token).from_url(url)
-                best = 0
-                for i, item in enumerate(sauce.results):
-                    if sauce.results[0].similarity - item.similarity < 4 and item.index_id == 5:
-                        best = i
-                sauce = sauce.results[best]
-                snao_sim = sauce.similarity
-            except:
-                snao_sim = 0
-            try:
-                tr_sim = int(request['result'][0]['similarity'] * 100)
-            except:
-                tr_sim = 0
-            if max(tr_sim, snao_sim) < 82:
-                await message.reply(embed=Embed(title='idk :('), delete_after=5)
-                return
-
-            await channel.trigger_typing()
-            if tr_sim - snao_sim > -2:
+            if request['result']:
+                await channel.trigger_typing()
                 best = request['result'][0]
                 info = anilist(best['anilist'])
                 embed = Embed(title='Top Anime Result',
@@ -96,6 +73,7 @@ class Anime(commands.Cog):
                 embed.add_field(name="Episode", value=f"{best['episode']}", inline=True)
                 embed.add_field(name="Time", value=f"{short_time(best['from'])}", inline=True)
                 embed.add_field(name="Similarity", value=f"{int(best['similarity'] * 100)}%", inline=True)
+                embed.set_image(url=best['image'])
                 embed.set_thumbnail(url=info['data']['Media']['coverImage']['large'])
                 await message.reply(embed=embed)
                 async with aiohttp.ClientSession() as session:
@@ -103,17 +81,6 @@ class Anime(commands.Cog):
                         if resp.status == 200:
                             data = io.BytesIO(await resp.read())
                             await message.reply(file=File(data, "cut.mp4"))
-            else:
-                embed = Embed(title='Top SauceNAO Result',
-                              description=f"Best match: [**{sauce.title}**]"
-                                          f"({sauce.urls[0]})")
-                resource = sauce.index_name.split(':')[1].split('-')[0].rstrip()
-                embed.add_field(name="Found in:", value=f"{resource}", inline=True)
-                if sauce.index_id == 5:
-                    embed.add_field(name="Pixiv ID", value=f"{sauce.raw['data']['pixiv_id']}", inline=True)
-                embed.add_field(name="Similarity", value=f"{sauce.similarity}%", inline=True)
-                embed.set_thumbnail(url=sauce.thumbnail)
-                await message.reply(embed=embed)
 
 
 def setup(bot):
