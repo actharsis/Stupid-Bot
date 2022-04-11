@@ -1,13 +1,12 @@
 import aiohttp
-import discord
 import io
 
 import emoji
 import requests
 import urllib.parse
 
-from discord import Embed
-from discord.ext import commands
+from nextcord import Embed, File
+from nextcord.ext import commands
 
 
 def anilist(idx):
@@ -81,7 +80,7 @@ class Anime(commands.Cog):
                     async with session.get(best['video']) as resp:
                         if resp.status == 200:
                             data = io.BytesIO(await resp.read())
-                            await message.reply(file=discord.File(data, "cut.mp4"))
+                            await message.reply(file=File(data, "cut.mp4"))
 
 
 def setup(bot):

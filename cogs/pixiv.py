@@ -8,12 +8,9 @@ import time
 
 from PIL import Image
 from config import pixiv_show_embed_illust, use_selenium
-from discord import Embed, File
-from discord.colour import Colour
-from discord.ext import commands
-from discord_slash import cog_ext
-from discord_slash.model import SlashCommandOptionType
-from discord_slash.utils.manage_commands import create_option, create_choice
+from nextcord import Embed, File, slash_command, SlashOption
+from nextcord.colour import Colour
+from nextcord.ext import commands
 from io import BytesIO
 from modules.pixiv_auth import refresh_token, selenium_login
 from pixivpy3 import *
@@ -156,7 +153,7 @@ class PixivCog(commands.Cog):
         else:
             return None
 
-    @cog_ext.cog_slash(name="pixiv_logout", description="Remove pixiv token from bot db")
+    @slash_command(name="pixiv_logout", description="Remove pixiv token from bot db")
     async def pixiv_logout(self, ctx):
         server = str(ctx.guild.id)
         if server in self.tokens:
@@ -166,17 +163,10 @@ class PixivCog(commands.Cog):
             embed = Embed(title="This server is not logged in", color=Colour.gold())
         await ctx.send(embed=embed, delete_after=10.0)
 
-    @cog_ext.cog_slash(name="pixiv_token", description="Log in to Pixiv via refresh token",
-                       options=[
-                           create_option(
-                               name="token",
-                               description="Your pixiv login",
-                               option_type=SlashCommandOptionType.STRING,
-                               required=True,
-                           )
-                       ])
-    async def pixiv_token(self, ctx, token):
-        await ctx.defer()
+    @slash_command(name="pixiv_token", description="Log in to Pixiv via refresh token")
+    async def pixiv_token(self, ctx,
+                          token: str = SlashOption(description="Your pixiv login", required=True)):
+        await ctx.response.defer()
         try:
             a = BetterAppPixivAPI(token=token)
             server = str(ctx.guild.id)
@@ -189,23 +179,11 @@ class PixivCog(commands.Cog):
         await ctx.send(embed=embed, delete_after=10.0)
 
     if use_selenium:
-        @cog_ext.cog_slash(name="pixiv_login", description="Log in to Pixiv",
-                           options=[
-                               create_option(
-                                   name="login",
-                                   description="Your pixiv login",
-                                   option_type=SlashCommandOptionType.STRING,
-                                   required=True,
-                               ),
-                               create_option(
-                                   name="password",
-                                   description="Your pixiv password",
-                                   option_type=SlashCommandOptionType.STRING,
-                                   required=True,
-                               )
-                           ])
-        async def pixiv_login(self, ctx, login, password):
-            await ctx.defer()
+        @slash_command(name="pixiv_login", description="Log in to Pixiv")
+        async def pixiv_login(self, ctx,
+                              login: str = SlashOption(description="Your pixiv login", required=True),
+                              password: str = SlashOption(description="Your pixiv password", required=True)):
+            await ctx.response.defer()
             try:
                 token = await selenium_login(login, password)
                 if token is None:
@@ -224,9 +202,9 @@ class PixivCog(commands.Cog):
                 embed = Embed(title="Can't log in with given token :(", color=Colour.red())
             await ctx.send(embed=embed, delete_after=10.0)
 
-    @cog_ext.cog_slash(name="pixiv_status", description="Show pixiv connection status")
+    @slash_command(name="pixiv_status", description="Show pixiv connection status")
     async def pixiv_status(self, ctx):
-        await ctx.defer()
+        await ctx.response.defer()
         server = str(ctx.guild.id)
         try:
             self.api[self.tokens[server]['value']].trending_tags_illust()
@@ -235,21 +213,20 @@ class PixivCog(commands.Cog):
             embed = Embed(title="Either you are not connected or there is a problem with the API", color=Colour.red())
         await ctx.send(embed=embed, delete_after=10.0)
 
-    @cog_ext.cog_slash(name="start_auto_pixiv", description="Add channel to the auto Pixiv list",
-                       options=[
-                           create_option(
-                               name="refresh_time",
-                               description="Delay between auto update in minutes (default = 180)",
-                               option_type=SlashCommandOptionType.INTEGER,
-                               required=False,
-                           ),
-                           create_option(
-                               name="limit",
-                               description="Amount of pictures will be displayed (default = 20)",
-                               option_type=SlashCommandOptionType.INTEGER,
-                               required=False,
-                           )])
-    async def add_auto_pixiv(self, ctx, refresh_time=180, limit=20):
+    @slash_command(name="start_auto_pixiv", description="Add channel to the auto Pixiv list")
+    async def add_auto_pixiv(self, ctx,
+                             refresh_time: int = SlashOption(
+                                 description="Delay between auto update in minutes (default = 180)",
+                                 required=False,
+                                 default=180,
+                                 min_value=60
+                             ),
+                             limit: int = SlashOption(
+                                 description="Amount of pictures will be displayed (default = 20)",
+                                 required=False,
+                                 default=20,
+                                 max_value=60
+                             )):
         channel_id = str(ctx.channel.id)
         if channel_id in self.channels.keys():
             embed = Embed(title="Auto Pixiv already running on this channel", color=Colour.gold())
@@ -259,7 +236,7 @@ class PixivCog(commands.Cog):
         await ctx.send(embed=embed)
         self.save(channels=True)
 
-    @cog_ext.cog_slash(name="stop_auto_pixiv", description="Delete channel from the auto Pixiv list")
+    @slash_command(name="stop_auto_pixiv", description="Delete channel from the auto Pixiv list")
     async def delete_auto_pixiv(self, ctx):
         channel_id = str(ctx.channel.id)
         if channel_id in self.channels.keys():
@@ -272,7 +249,7 @@ class PixivCog(commands.Cog):
         await ctx.send(embed=embed)
         self.save(channels=True, timers=True)
 
-    @cog_ext.cog_slash(name="spoil_nsfw", description="Spoil NSFW in this server")
+    @slash_command(name="spoil_nsfw", description="Spoil NSFW in this server")
     async def change_spoiler(self, ctx):
         server_id = ctx.guild.id
         if server_id not in self.spoilers:
@@ -284,92 +261,82 @@ class PixivCog(commands.Cog):
             embed = Embed(title="NSFW spoiler feature turned off", color=Colour.red())
         await ctx.send(embed=embed, delete_after=5.0)
 
-    @cog_ext.cog_slash(name='next', description="Show the next page of your last 'best' or 'recommended' query",
-                       options=[
-                           create_option(
-                               name="limit",
-                               description="Amount of pictures will be displayed (default = 10)",
-                               option_type=SlashCommandOptionType.INTEGER,
-                               required=False,
-                           )])
-    async def next(self, ctx, limit=10):
-        await ctx.defer()
+    @slash_command(name='next', description="Show the next page of your last 'best' or 'recommended' query")
+    async def next(self, ctx, limit: int = SlashOption(
+                                 description="Amount of pictures will be displayed (default = 20)",
+                                 required=False,
+                                 default=20,
+                                 max_value=30
+                             )):
+        await ctx.response.defer()
         api = self.get_api(ctx.guild.id)
-        if ctx.author.id in self.last_query:
-            next_qs = api.parse_qs(self.last_query[ctx.author.id].next_url)
+        if ctx.user.id in self.last_query:
+            next_qs = api.parse_qs(self.last_query[ctx.user.id].next_url)
             query = None
-            if self.last_type[ctx.author.id] == 'recommended':
+            if self.last_type[ctx.user.id] == 'recommended':
                 query = api.illust_recommended(**next_qs)
-            elif self.last_type[ctx.author.id] == 'best':
+            elif self.last_type[ctx.user.id] == 'best':
                 query = api.illust_ranking(**next_qs)
-            embed = await self.show_page_embed(api, query, self.last_type[ctx.author.id], ctx.channel,
-                                               limit, save_query=True, user_id=ctx.author.id)
+            embed = await self.show_page_embed(api, query, self.last_type[ctx.user.id], ctx.channel,
+                                               limit, save_query=True, user_id=ctx.user.id)
         else:
             embed = Embed(title="Previous request not found", color=Colour.red())
         await ctx.send(embed=embed, delete_after=5.0)
 
-    @cog_ext.cog_slash(name='recommended', description="Show [10] recommended Pixiv illustrations",
-                       options=[
-                           create_option(
-                               name="limit",
-                               description="Amount of pictures will be displayed (default = 10)",
-                               option_type=SlashCommandOptionType.INTEGER,
-                               required=False,
-                           )])
-    async def recommended(self, ctx, limit=10):
-        await ctx.defer()
+    @slash_command(name='recommended', description="Show [10] recommended Pixiv illustrations")
+    async def recommended(self, ctx, limit: int = SlashOption(
+                                 description="Amount of pictures will be displayed (default = 10)",
+                                 required=False,
+                                 default=10,
+                                 max_value=30
+                             )):
+        await ctx.response.defer()
         api = self.get_api(ctx.guild.id)
         try:
             query = api.illust_recommended()
             embed = await self.show_page_embed(api, query, 'recommended', ctx.channel, limit,
-                                               save_query=True, user_id=ctx.author.id)
+                                               save_query=True, user_id=ctx.user.id)
         except:
             embed = Embed(title="Authentication required!\nCall /pixiv_login first for more info", color=Colour.red())
         await ctx.send(embed=embed, delete_after=5.0)
 
-    @cog_ext.cog_slash(name='best', description='Find best [10] rated illustrations with specific mode and date',
-                       options=[
-                           create_option(
-                               name="mode",
-                               description="Specify one of the types",
-                               option_type=SlashCommandOptionType.STRING,
-                               required=False,
-                               choices=[
-                                   create_choice("day", "Day"),
-                                   create_choice("week", "Week"),
-                                   create_choice("month", "Month"),
-                                   create_choice("day_male", "Day Male likes"),
-                                   create_choice("day_female", "Day Female likes"),
-                                   create_choice("day_r18", "Day Ecchi"),
-                                   create_choice("day_male_r18", "Day Male likes Ecchi"),
-                                   create_choice("week_r18", "Week Ecchi"),
-                               ]
-                           ),
-                           create_option(
-                               name="limit",
-                               description="Amount of pictures will be displayed (default = 10)",
-                               option_type=SlashCommandOptionType.INTEGER,
-                               required=False
-                           ),
-                           create_option(
-                               name="from_date",
-                               description="Date of sample in format: YYYY-MM-DD",
-                               option_type=SlashCommandOptionType.STRING,
-                               required=False
-                           )
-                       ])
-    async def best(self, ctx, mode='month', limit=10, from_date=None):
-        await ctx.defer()
+    @slash_command(name='best', description='Find best [10] rated illustrations with specific mode and date')
+    async def best(self, ctx,
+                   mode: str = SlashOption(description="Specify one of the types",
+                                           choices={"Day": "day",
+                                                    "Week": "week",
+                                                    "Month": "month",
+                                                    "Day Male likes": "day_male",
+                                                    "Day Female likes": "day_female",
+                                                    "Day Ecchi": "day_r18",
+                                                    "Day Male likes Ecchi": "day_male_r18",
+                                                    "Week Ecchi": "week_r18",
+                                                    },
+                                           required=False,
+                                           default="month"
+                                           ),
+                   limit: int = SlashOption(
+                       description="Amount of pictures will be displayed (default = 10)",
+                       required=False,
+                       default=10,
+                       max_value=30
+                   ),
+                   from_date: str = SlashOption(
+                       description="Date of sample in format: YYYY-MM-DD",
+                       required=False,
+                       default=None
+                   )):
+        await ctx.response.defer()
         api = self.get_api(ctx.guild.id)
         try:
             query = api.illust_ranking(mode=mode, date=from_date, offset=None)
             embed = await self.show_page_embed(api, query, 'best', ctx.channel, limit,
-                                               save_query=True, user_id=ctx.author.id)
+                                               save_query=True, user_id=ctx.user.id)
         except:
             embed = Embed(title="Authentication required!\nCall /pixiv_login first for more info", color=Colour.red())
         await ctx.send(embed=embed, delete_after=5.0)
 
-    @cog_ext.cog_slash(name='when', description='Show remaining time until new illustrations')
+    @slash_command(name='when', description='Show remaining time until new illustrations')
     async def time_to_update(self, ctx):
         channel_id = str(ctx.channel.id)
         if channel_id in self.timers.keys() and channel_id in self.channels:
@@ -382,16 +349,10 @@ class PixivCog(commands.Cog):
             embed = Embed(title="Timer has not started", color=Colour.gold())
         await ctx.send(embed=embed, delete_after=10.0)
 
-    @cog_ext.cog_slash(name='tag', description='Get tagged name of word',
-                       options=[
-                           create_option(
-                               name="word",
-                               description="Word, that will be translated to most popular related tag",
-                               option_type=SlashCommandOptionType.STRING,
-                               required=True
-                           )
-                       ])
-    async def tag(self, ctx, word):
+    @slash_command(name='tag', description='Get tagged name of word')
+    async def tag(self, ctx,
+                  word: str = SlashOption(description="Word, that will be translated to most popular related tag",
+                                          required=True)):
         api = self.get_api(ctx.guild.id)
         try:
             query = api.search_autocomplete(word)
@@ -407,82 +368,75 @@ class PixivCog(commands.Cog):
             embed = Embed(title="Authentication required!\nCall /pixiv_login first for more info", color=Colour.red())
         await ctx.send(embed=embed, delete_after=30.0)
 
-    @cog_ext.cog_slash(name='find', description='Find illustrations that satisfy the filters from random point of time',
-                       options=[
-                           create_option(
-                               name="word",
-                               description="Find by specific word",
-                               option_type=SlashCommandOptionType.STRING,
-                               required=True,
-                           ),
-                           create_option(
-                               name="match",
-                               description="Word match rule (default = partial_match_for_tags)",
-                               option_type=SlashCommandOptionType.STRING,
-                               required=False,
-                               choices=[
-                                   create_choice("partial_match_for_tags", "partial_match_for_tags"),
-                                   create_choice("exact_match_for_tags", "exact_match_for_tags"),
-                                   create_choice("title_and_caption", "title_and_caption")
-                               ]
-                           ),
-                           create_option(
-                               name="limit",
-                               description="Maximum amount of pictures that will be shown (default 5, maximum = 20)",
-                               option_type=SlashCommandOptionType.INTEGER,
-                               required=False,
-                           ),
-                           create_option(
-                               name="views",
-                               description="Required minimum amount of views (default = 20000)",
-                               option_type=SlashCommandOptionType.INTEGER,
-                               required=False,
-                           ),
-                           create_option(
-                               name="rate",
-                               description="Required minimum percent of views/bookmarks (default = 10)",
-                               option_type=SlashCommandOptionType.FLOAT,
-                               required=False,
-                           ),
-                           create_option(
-                               name="max_sanity_level",
-                               description="Filter illusts to a specified sanity level (default = 5, min = 2, max = 6)",
-                               option_type=SlashCommandOptionType.INTEGER,
-                               required=False,
-                           ),
-                           create_option(
-                               name="period",
-                               description="Random Date period (no impact if since date given)",
-                               option_type=SlashCommandOptionType.STRING,
-                               required=False,
-                               choices=[
-                                   create_choice(date.back_in_months(1 * 12), "new"),
-                                   create_choice(date.back_in_months(2 * 12), "2 years range"),
-                                   create_choice(date.back_in_months(3 * 12), "3 years range"),
-                                   create_choice(date.back_in_months(6 * 12), "6 years range"),
-                                   create_choice(date.back_in_months(9 * 12), "9 years range"),
-                                   create_choice(date.back_in_months(14 * 12), "all time period"),
-                               ]
-                           ),
-                           create_option(
-                               name="from_date",
-                               description="Fixed date in format YYYY-MM-DD from which search will be initialized",
-                               option_type=SlashCommandOptionType.STRING,
-                               required=False,
-                           )])
-    async def find(self, ctx, word, match='exact_match_for_tags',
-                   limit=5, views=20000, rate=10.0, max_sanity_level=5,
-                   period=date.back_in_months(4 * 12), from_date=None):
-        await ctx.defer()
+    @slash_command(name='find', description='Find illustrations that satisfy the filters from random point of time')
+    async def find(self, ctx,
+                   word: str = SlashOption(
+                       description="Find by specific word",
+                       required=True
+                   ),
+                   match: str = SlashOption(
+                       description="Word match rule (default = exact_match_for_tags)",
+                       default="exact_match_for_tags",
+                       choices={
+                           "Partial match for tags": "partial_match_for_tags",
+                           "Exact match for tags": "exact_match_for_tags",
+                           "Title and caption": "title_and_caption"
+                       },
+                       required=False
+                   ),
+                   limit: int = SlashOption(
+                       description="Maximum amount of pictures that will be shown (default 5, maximum = 20)",
+                       default=5,
+                       min_value=1,
+                       max_value=20,
+                       required=False
+                   ),
+                   views: int = SlashOption(
+                       description="Required minimum amount of views (default = 10000)",
+                       default=10000,
+                       min_value=0,
+                       max_value=100000,
+                       required=False
+                   ),
+                   rate: float = SlashOption(
+                       description="Required minimum percent of views/bookmarks (default = 10)",
+                       default=10,
+                       min_value=0,
+                       max_value=75,
+                       required=False
+                   ),
+                   max_sanity_level: int = SlashOption(
+                       description="Filter illusts to a specified sanity level (default = 5, min = 2, max = 6)",
+                       default=5,
+                       min_value=2,
+                       max_value=6,
+                       required=False
+                   ),
+                   period: str = SlashOption(
+                       description="Random Date period (no impact if from_date given)",
+                       choices={
+                           "new": date.back_in_months(1 * 12),
+                           "2 years range": date.back_in_months(2 * 12),
+                           "3 years range": date.back_in_months(3 * 12),
+                           "6 years range": date.back_in_months(6 * 12),
+                           "9 years range": date.back_in_months(9 * 12),
+                           "all time period" : date.back_in_months(14 * 12)
+                       },
+                       default=date.back_in_months(4 * 12),
+                       required=False
+                   ),
+                   from_date: str = SlashOption(
+                       description="Fixed date in format YYYY-MM-DD from which search will be initialized",
+                       default=None,
+                       required=False
+                   )):
+        await ctx.response.defer()
         api = self.get_api(ctx.guild.id)
         channel = ctx.channel
         try:
             word = api.search_autocomplete(word).tags[0].name
         except:
             pass
-        max_sanity_level = max(2, max_sanity_level)
-        max_sanity_level = min(6, max_sanity_level)
-        limit = min(limit, 20)
         selected_date = date.random(period, date.current(), random.random())
         if date.is_valid(from_date):
             selected_date = from_date
@@ -508,17 +462,10 @@ class PixivCog(commands.Cog):
             embed = Embed(title="Authentication required!\nCall /pixiv_login first for more info", color=Colour.red())
         await ctx.send(embed=embed, delete_after=10.0)
 
-    @cog_ext.cog_slash(name='illust', description='Get pixiv illustration by ID',
-                       options=[
-                           create_option(
-                               name="idx",
-                               description="Illustration ID",
-                               option_type=SlashCommandOptionType.STRING,
-                               required=True
-                           )
-                       ])
-    async def get_illust(self, ctx, idx):
-        await ctx.defer()
+    @slash_command(name='illust', description='Get pixiv illustration by ID')
+    async def get_illust(self, ctx,
+                         idx: str = SlashOption(description="Illustration ID", required=True)):
+        await ctx.response.defer()
         await self.show_illust(self.get_api(ctx.guild.id), idx, ctx)
 
     @commands.Cog.listener()

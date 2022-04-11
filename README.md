@@ -9,31 +9,13 @@ TabaBot - another random bot. Main idea is message analysis: give some interesti
 In `config.py` you can specify your token and some additional options.
 
 ## Requirements
-python3
+python3 with dependencies from requirements.txt
 
-discord.py
-
-wavelink
-
-discord_slash
-
-pixivpy3
-
-peewee
-
-PIL
-
-emoji
-
-java version "17.0.2"
-
-Lavalink server for music bot features
+Lavalink server for music features
 
 ***Optional***
 
-tensorflow
-
-tensorflow_hub
+nsfw-detector
 
 selenium
 

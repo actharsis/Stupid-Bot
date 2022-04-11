@@ -1,8 +1,7 @@
 import models
 import constants
-from discord import Embed
+from nextcord import Embed, ChannelType
 from time import sleep
-from discord import ChannelType
 from threading import *
 from peewee import *
 
