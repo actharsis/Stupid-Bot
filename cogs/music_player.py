@@ -378,7 +378,8 @@ class PlayerView(View):
             self.player.queue.clear()
             await self.player.stop()
         elif custom_id == 'history':
-            await interaction.response.send_message(embed=build_history_embed(self.player), ephemeral=True)
+            await interaction.response.send_message(embed=build_history_embed(self.player),
+                                                    ephemeral=True, delete_after=60)
         elif custom_id == 'queue_list':
             value = interaction.data['values'][0]
             for i in range(int(value)):

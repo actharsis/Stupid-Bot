@@ -8,7 +8,7 @@ import time
 
 from PIL import Image
 from config import pixiv_show_embed_illust, use_selenium
-from nextcord import Embed, File, slash_command, SlashOption
+from nextcord import Interaction, Embed, File, slash_command, SlashOption, TextInputStyle, ui
 from nextcord.colour import Colour
 from nextcord.ext import commands
 from io import BytesIO
@@ -34,6 +34,95 @@ class BetterAppPixivAPI(AppPixivAPI):
         }
         r = self.no_auth_requests_call('GET', url, params=params, req_auth=req_auth)
         return self.parse_result(r)
+
+
+class LoginModal(ui.Modal):
+    def __init__(self, ctx, pixiv) -> None:
+        super().__init__(title="Pixiv login form", custom_id="login_form")
+        self.ctx = ctx
+        self.pixiv = pixiv
+        self.add_item(
+            ui.TextInput(
+                label="Login",
+                placeholder="login@gmail.com",
+                custom_id="login",
+                style=TextInputStyle.short,
+                min_length=1,
+                required=True
+            )
+        )
+        self.add_item(
+            ui.TextInput(
+                label="Password",
+                placeholder="p@ssw0rd",
+                custom_id="password",
+                style=TextInputStyle.short,
+                min_length=1,
+                required=True
+            )
+        )
+
+    async def auth(self, login, password):
+        try:
+            token = await selenium_login(login, password)
+            if token is None:
+                await self.ctx.send(embed=Embed(title="Can't log in.\n"
+                                                      "Incorrect account details or captcha required :(\n"
+                                                      "Try pixiv token instead",
+                                                color=Colour.red()),
+                                    delete_after=10.0)
+                return
+            a = BetterAppPixivAPI(token=token)
+            server = str(self.ctx.guild.id)
+            self.pixiv.api[token] = a
+            self.pixiv.tokens[server] = {"value": token, "time": str(0)}
+            embed = Embed(title="Successfully logged in :)", color=Colour.green())
+            self.pixiv.save(tokens=True)
+        except:
+            embed = Embed(title="Can't log in with given token :(", color=Colour.red())
+        await self.ctx.send(embed=embed, delete_after=10.0)
+
+    async def callback(self, inter: Interaction) -> None:
+        login = self.children[0].value
+        password = self.children[1].value
+        await inter.response.send_message(embed=Embed(title="Task created", color=Colour.green()),
+                                          ephemeral=True, delete_after=5)
+        await self.auth(login, password)
+
+
+class TokenModal(ui.Modal):
+    def __init__(self, ctx, pixiv) -> None:
+        super().__init__(title="Pixiv token form", custom_id="login_form")
+        self.ctx = ctx
+        self.pixiv = pixiv
+        self.add_item(
+            ui.TextInput(
+                label="Refresh token",
+                placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                custom_id="token",
+                style=TextInputStyle.short,
+                min_length=1,
+                required=True
+            )
+        )
+
+    async def auth(self, token):
+        try:
+            a = BetterAppPixivAPI(token=token)
+            server = str(self.ctx.guild.id)
+            self.pixiv.api[token] = a
+            self.pixiv.tokens[server] = {"value": token, "time": str(0)}
+            embed = Embed(title="Successfully logged in :)", color=Colour.green())
+            self.pixiv.save(tokens=True)
+        except:
+            embed = Embed(title="Can't login with given token :(", color=Colour.red())
+        await self.ctx.send(embed=embed, delete_after=10.0)
+
+    async def callback(self, inter: Interaction) -> None:
+        token = self.children[0].value
+        await inter.response.send_message(embed=Embed(title="Task created", color=Colour.green()),
+                                          ephemeral=True, delete_after=5)
+        await self.auth(token)
 
 
 class PixivCog(commands.Cog):
@@ -164,43 +253,13 @@ class PixivCog(commands.Cog):
         await ctx.send(embed=embed, delete_after=10.0)
 
     @slash_command(name="pixiv_token", description="Log in to Pixiv via refresh token")
-    async def pixiv_token(self, ctx,
-                          token: str = SlashOption(description="Your pixiv login", required=True)):
-        await ctx.response.defer()
-        try:
-            a = BetterAppPixivAPI(token=token)
-            server = str(ctx.guild.id)
-            self.api[token] = a
-            self.tokens[server] = {"value": token, "time": str(0)}
-            embed = Embed(title="Successfully logged in :)", color=Colour.green())
-            self.save(tokens=True)
-        except:
-            embed = Embed(title="Can't login with given token :(", color=Colour.red())
-        await ctx.send(embed=embed, delete_after=10.0)
+    async def pixiv_token(self, ctx):
+        await ctx.response.send_modal(modal=TokenModal(ctx, self))
 
     if use_selenium:
         @slash_command(name="pixiv_login", description="Log in to Pixiv")
-        async def pixiv_login(self, ctx,
-                              login: str = SlashOption(description="Your pixiv login", required=True),
-                              password: str = SlashOption(description="Your pixiv password", required=True)):
-            await ctx.response.defer()
-            try:
-                token = await selenium_login(login, password)
-                if token is None:
-                    await ctx.send(embed=Embed(title="Can't log in. Captcha required :(\n"
-                                                     "Try pixiv token instead",
-                                               color=Colour.red()),
-                                   delete_after=10.0)
-                    return
-                a = BetterAppPixivAPI(token=token)
-                server = str(ctx.guild.id)
-                self.api[token] = a
-                self.tokens[server] = {"value": token, "time": str(0)}
-                embed = Embed(title="Successfully logged in :)", color=Colour.green())
-                self.save(tokens=True)
-            except:
-                embed = Embed(title="Can't log in with given token :(", color=Colour.red())
-            await ctx.send(embed=embed, delete_after=10.0)
+        async def pixiv_login(self, ctx):
+            await ctx.response.send_modal(modal=LoginModal(ctx, self))
 
     @slash_command(name="pixiv_status", description="Show pixiv connection status")
     async def pixiv_status(self, ctx):
