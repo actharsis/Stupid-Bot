@@ -1,4 +1,6 @@
 token = ''
+db_address = '127.0.0.1'
+db_name = 'TabaBotDB'
 
 pixiv_show_embed_illust = False
 use_selenium = False

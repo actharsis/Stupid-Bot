@@ -1,12 +1,14 @@
 import json
+import pymongo
 import random
 import constants
 import urllib.request
 
 from datetime import datetime
-from modules.message_analysis import Analysis_module
+from modules.message_analysis import AnalysisModule
 from nextcord import Embed, slash_command
 from nextcord.ext import commands
+from config import db_address, db_name
 
 
 start_time = datetime.now()
@@ -73,7 +75,7 @@ async def message_repeating(ctx):
     if ctx.channel.id in history and ctx.content != '':
         if history[ctx.channel.id]['text'] == ctx.content:
             history[ctx.channel.id]['count'] += 1
-            if (history[ctx.channel.id]['count'] == constants.MESSAGES_TO_REPEAT):
+            if history[ctx.channel.id]['count'] == constants.MESSAGES_TO_REPEAT:
                 await ctx.channel.send(history[ctx.channel.id]['text'])
                 history[ctx.channel.id]['text'] = ''
                 history[ctx.channel.id]['count'] = 0
@@ -87,11 +89,11 @@ async def message_repeating(ctx):
 async def reference_reaction(ctx, client):
     if (not ctx.reference
             or ctx.reference.resolved.author.id != client.user.id
-            or ctx.user.id == client.user.id):
+            or ctx.author.id == client.user.id):
         return
 
     if replies:
-        special_replies = get_special_replies(ctx.user.id)
+        special_replies = get_special_replies(ctx.author.id)
         if special_replies:
             special_reply = random.choice(special_replies)
             if special_reply.startswith("&") or special_reply.startswith("№"):
@@ -103,8 +105,9 @@ async def reference_reaction(ctx, client):
 
 class MiscCog(commands.Cog):
     def __init__(self, bot):
+        self.db = pymongo.MongoClient(db_address)[db_name]
         self.client = bot
-        self.analyzer = Analysis_module(self.client)
+        self.analyzer = AnalysisModule(self.client, self.db)
 
     @commands.Cog.listener()
     async def on_message(self, ctx):
@@ -127,7 +130,7 @@ class MiscCog(commands.Cog):
     @slash_command(name='top')
     async def send_top(self, ctx):
         await ctx.response.defer()
-        await self.analyzer.get_top(ctx)
+        await self.analyzer.get_userscores(ctx)
 
     @slash_command(name='voice')
     async def send_voice_activity(self, ctx):
