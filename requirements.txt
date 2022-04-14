@@ -1,6 +1,9 @@
 nextcord>=2.0.0a10
 aiohttp>=3.8.1
 emoji>=1.6.1
-requests>=2.26.0
+requests>=2.27.1
 Pillow>=8.4.0
+yarl>=1.7.2
 numpy>=1.22.3
+peewee>=3.14.8
+saucenao_api

@@ -202,6 +202,7 @@ class PixivCog(commands.Cog):
             for idx, item in enumerate(illust.meta_pages):
                 url = item.image_urls.original
                 await self.send_illust(api, illust, url, chat, idx)
+            return True
         except:
             await chat.send(embed=Embed(title=f'Fail', color=Colour.red()), delete_after=5.0)
             return None
@@ -540,9 +541,21 @@ class PixivCog(commands.Cog):
         except TypeError:
             demojized = None
         if payload.user_id != self.bot.user.id:
-            if message.attachments is not None and len(message.attachments) == 1 and \
-                    message.author == self.bot.user:
-                illust_id = message.attachments[0].filename.split('.')[0].split('_')[-1]
+            if message.attachments is not None and message.author == self.bot.user:
+                illust_id = None
+                lock_info = False
+                if len(message.attachments) == 1:
+                    illust_id = message.attachments[0].filename.split('.')[0].split('_')[-1]
+                    if not illust_id.isnumeric():
+                        illust_id = None
+                try:
+                    if message.embeds[0].fields[1].name == "Pixiv ID":
+                        illust_id = message.embeds[0].fields[1].value
+                        lock_info = True
+                except:
+                    pass
+                if illust_id is None:
+                    return
                 emojis = {':red_heart:', ':growing_heart:', ':magnifying_glass_tilted_left:', ':seedling:',
                           ':broken_heart:', ':red_question_mark:', ':elephant:', ':face_vomiting:'}
                 if demojized in emojis:
@@ -563,19 +576,19 @@ class PixivCog(commands.Cog):
                     except:
                         await message.add_reaction(emoji.emojize(':thumbs_down:'))
                 elif demojized == ':magnifying_glass_tilted_left:':
-                    r = await self.show_illust(api, illust_id, message.channel)
-                    if r:
+                    try:
                         await message.add_reaction(emoji.emojize(':thumbs_up:'))
-                    else:
+                        await self.show_illust(api, illust_id, message.channel)
+                    except:
                         await message.add_reaction(emoji.emojize(':thumbs_down:'))
                 elif demojized == ':seedling:':
                     try:
-                        await message.add_reaction(emoji.emojize(':thumbs_up:'))
                         query = api.illust_related(illust_id)
+                        await message.add_reaction(emoji.emojize(':thumbs_up:'))
                         await self.show_page(api, query, message.channel, limit=5)
                     except:
                         await message.add_reaction(emoji.emojize(':thumbs_down:'))
-                elif demojized == ':face_vomiting:':
+                elif demojized == ':face_vomiting:' and not lock_info:
                     await message.delete()
                 elif demojized == ':broken_heart:':
                     try:
@@ -586,7 +599,7 @@ class PixivCog(commands.Cog):
                         await message.add_reaction(emoji.emojize(':broken_heart:'))
                     except:
                         await message.add_reaction(emoji.emojize(':thumbs_down:'))
-                elif demojized == ':red_question_mark:':
+                elif demojized == ':red_question_mark:' and not lock_info:
                     try:
                         await message.add_reaction(emoji.emojize(':thumbs_up:'))
                         illust = api.illust_detail(illust_id).illust
@@ -597,12 +610,14 @@ class PixivCog(commands.Cog):
                                 tags += f' - {tag.translated_name}'
                             tags += ', '
                         tags = tags[:-2]
-                        embed = Embed(title="Illustration info:",
-                                      description=f'Title: [{illust.title}](https://www.pixiv.net/en/artworks/{illust.id})'
-                                                  f', ID: {illust.id}'
-                                                  f'\n\nViews: {illust.total_view}, Bookmarks: {illust.total_bookmarks}'
-                                                  f'\n\nTags: {tags}',
-                                      color=Colour.green())
+                        embed = Embed(title="Illustration info:", color=Colour.green())
+                        embed.add_field(name="Title:",
+                                        value=f"[{illust.title}](https://www.pixiv.net/en/artworks/{illust.id})",
+                                        inline=False)
+                        embed.add_field(name="ID:", value=illust_id, inline=True)
+                        embed.add_field(name="Views:", value=illust.total_view, inline=True)
+                        embed.add_field(name="Bookmarks:", value=illust.total_bookmarks, inline=True)
+                        embed.add_field(name="Tags:", value=tags, inline=False)
                         await message.edit(embed=embed, suppress=False)
                         await asyncio.sleep(20)
                         await message.edit(suppress=True)

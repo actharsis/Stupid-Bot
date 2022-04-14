@@ -10,3 +10,4 @@ wavelink_port = 2333
 wavelink_password = ''
 spotify_client_id = ''
 spotify_client_secret = ''
+saucenao_token = ''
