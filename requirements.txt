@@ -1,0 +1,11 @@
+nextcord>=2.0.0a10
+aiohttp>=3.8.1
+emoji>=1.6.1
+requests>=2.27.1
+Pillow>=8.4.0
+yarl>=1.7.2
+numpy>=1.22.3
+pymongo>=4.1.1
+saucenao_api>=2.4.0
+pandas>=1.4.2
+PixivPy-Async>=1.2.14

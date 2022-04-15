@@ -1,22 +1,22 @@
 import pandas as pd
-from discord import Embed
 from time import sleep
-from discord import ChannelType
 from threading import *
 
-class Analysis_module:
+
+class AnalysisModule:
     def __init__(self, client, db):
         self.discord_client = client
         self.voice_activity_collection = db["voice_activity"]
         self.messages_collection = db["messages"]
         self.voice_activity_thread = Thread(target = self.voice_activity_check)
+        self.voice_activity_thread = Thread(target=self.voice_activity_check)
         self.voice_activity_thread.start()
         self.db = db
 
     def __del__(self):
-        self.voice_activity_collection.update_many({"session_ended": False}, {"$set" : {"session_ended" : True}})
+        self.voice_activity_collection.update_many({"session_ended": False}, {"$set": {"session_ended": True}})
 
-    async def get_voice_activity(self, ctx): #do after forming collection structure
+    async def get_voice_activity(self, ctx):  # do after forming collection structure
         for item in self.voice_activity_collection.find({"guild_id": ctx.guild.id}):
             print(item)
 
@@ -26,9 +26,9 @@ class Analysis_module:
         # answer += "```"
 
         # embed = Embed(title="Voice activity", description=answer)
-        # await ctx.send(embed=embed)
+        # await ctx.reply(embed=embed)
 
-    def voice_activity_check(self): #make adding new users to active list
+    def voice_activity_check(self):  # make adding new users to active list
         while True:
             active_users = self.get_active_voice_users()
 
@@ -44,6 +44,7 @@ class Analysis_module:
     def get_active_voice_users(self):
         active_users = {}
         for guild in self.discord_client.guilds:
+            guild_active_users = []
             for channel in guild.channels:
                 if channel.type == ChannelType.voice:
                     guild_active_users = channel.voice_states.keys()
@@ -59,24 +60,24 @@ class Analysis_module:
             "channel_id": ctx.channel.id,
             "content": ctx.content,
             "attachments": ctx.attachments,
-            "attachments_number": len(ctx.attachments) #doesn't work
+            "attachments_number": len(ctx.attachments)  # doesn't work
         }
         self.messages_collection.insert_one(new_item)
 
     async def get_userscores(self, ctx):
-        df = pd.DataFrame(list(self.messages_collection.find({"guild_id" : ctx.guild.id}, ["author_id", "content", "attachments_number"])))
+        df = pd.DataFrame(list(self.messages_collection.find({"guild_id": ctx.guild.id},
+                                                             ["author_id", "content", "attachments_number"])))
         df["length"] = df["content"].apply(lambda x: len(x))
         df["score"] = df["length"] * 0.1 + df["attachments_number"] * 5
         df = df.groupby(["author_id"]).sum()
-        df = df.reset_index()
 
         answer = "```"
-        for item, row in df.iterrows():
-            answer += "#" + str(item + 1) + " " + str(await self.fetch_user(row["author_id"])) + " - " + str(row["score"]) + "\n"
-        answer += "```"
+        for item in df:
+            answer += "#" + str(df[df['author_id'] == item['author_id']].index[0]) + " - " + str(item["score"]) + "\n"
+        answer = "```"
         embed = Embed(title="Top", description=answer)
-        await ctx.send(embed=embed)
+        await ctx.reply(embed=embed)
 
-    async def fetch_user(self, id):
-        user = await self.discord_client.fetch_user(id)
-        return f'{str(user.name)}#{str(user.discriminator)}'
+    # async def fetch_user(self, id):
+    #     user = await self.discord_client.fetch_user(id)
+    #     return str(user.name) + "#" + str(user.discriminator)

@@ -95,7 +95,7 @@ async def selenium_login(log, pwd):
     #
 
     ok = False
-    for i in range(5):
+    for i in range(60):
         # wait for login
         if driver.current_url[:40] == "https://accounts.pixiv.net/post-redirect":
             ok = True

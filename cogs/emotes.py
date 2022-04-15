@@ -1,28 +1,9 @@
 import json
+import nextcord
 
-import discord
-
-from discord import Embed
-from discord.colour import Colour
-from discord.ext import commands
-from discord_slash import cog_ext
-from discord_slash.model import SlashCommandOptionType
-from discord_slash.utils.manage_commands import create_option
-
-
-async def act(ctx, member: discord.Member, *, message=None):
-    if message is None:
-        await ctx.send(f'No message provided', delete_after=10.0)
-        return
-    await ctx.delete()
-    name = member.nick
-    if name is None:
-        name = member.name
-    webhook = await ctx.channel.create_webhook(name=name)
-    await webhook.send(str(message), username=name, avatar_url=member.avatar_url)
-    webhooks = await ctx.channel.webhooks()
-    for webhook in webhooks:
-        await webhook.delete()
+from nextcord import Embed, SlashOption, slash_command
+from nextcord.colour import Colour
+from nextcord.ext import commands
 
 
 def mimic(ctx, text):
@@ -56,6 +37,20 @@ class Emotes(commands.Cog):
         self.sub_users = set()
         self.load()
 
+    async def act(self, ctx, member: nextcord.Member, *, message=None):
+        if message is None:
+            await ctx.send(f'No message provided', delete_after=10.0)
+            return
+        name = member.nick
+        if name is None:
+            name = member.name
+        webhook = await ctx.channel.create_webhook(name=name)
+        self.bot.loop.create_task(ctx.delete())
+        await webhook.send(str(message), username=name, avatar_url=member.avatar.url)
+        webhooks = await ctx.channel.webhooks()
+        for webhook in webhooks:
+            await webhook.delete()
+
     def save(self, users=False, emoji=False):
         if users:
             with open('json/emoji_users.json', 'w') as file:
@@ -86,7 +81,7 @@ class Emotes(commands.Cog):
             if str(ctx.author.id) not in self.sub_users:
                 resend_emote = False
             if resend_mimic or resend_emote:
-                await act(ctx, user, message=text)
+                await self.act(ctx, user, message=text)
 
     async def load_emotes(self):
         for guild in self.bot.guilds:
@@ -120,10 +115,10 @@ class Emotes(commands.Cog):
             pc = c
         return new_text, changed
 
-    @cog_ext.cog_slash(name='subscribe', description='Subscribe/unsubscribe from emoji replacing feature')
+    @slash_command(name='subscribe', description='Subscribe/unsubscribe from emoji replacing feature')
     async def subscribe(self, ctx):
-        await ctx.defer()
-        user_id = str(ctx.author.id)
+        await ctx.response.defer()
+        user_id = str(ctx.user.id)
         if user_id in self.sub_users:
             embed = Embed(title="You've been deleted from list", color=Colour.red())
             self.sub_users.remove(user_id)
@@ -133,16 +128,10 @@ class Emotes(commands.Cog):
         self.save(users=True)
         await ctx.send(embed=embed, delete_after=10.0)
 
-    @cog_ext.cog_slash(name='add', description='Add/remove emoji',
-                       options=[
-                           create_option(
-                               name="emoji",
-                               description="Your emoji",
-                               option_type=SlashCommandOptionType.STRING,
-                               required=True
-                           )
-                       ])
-    async def add(self, ctx, emoji):
+    @slash_command(name='add', description='Add/remove emoji')
+    async def add(self, ctx, emoji: str = SlashOption(name="emoji",
+                                                      description="Your emoji",
+                                                      required=True)):
         ar = emoji.split(':')
         if len(ar) == 3 and len(emoji) > 4 and emoji[0] == '<' and \
                 (emoji[1] == ':' or emoji[1] == 'a' and emoji[2] == ':') and emoji[-1] == '>':

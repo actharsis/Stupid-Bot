@@ -1,14 +1,14 @@
 import json
+import pymongo
 import random
 import constants
 import urllib.request
 
 from datetime import datetime
-from modules.message_analysis import Analysis_module
-from discord import Embed, File
-from discord.ext import commands
-from discord_slash import cog_ext
-from main import db
+from modules.message_analysis import AnalysisModule
+from nextcord import Embed, slash_command
+from nextcord.ext import commands
+from config import db_address, db_name
 
 
 start_time = datetime.now()
@@ -75,7 +75,7 @@ async def message_repeating(ctx):
     if ctx.channel.id in history and ctx.content != '':
         if history[ctx.channel.id]['text'] == ctx.content:
             history[ctx.channel.id]['count'] += 1
-            if (history[ctx.channel.id]['count'] == constants.MESSAGES_TO_REPEAT):
+            if history[ctx.channel.id]['count'] == constants.MESSAGES_TO_REPEAT:
                 await ctx.channel.send(history[ctx.channel.id]['text'])
                 history[ctx.channel.id]['text'] = ''
                 history[ctx.channel.id]['count'] = 0
@@ -105,8 +105,9 @@ async def reference_reaction(ctx, client):
 
 class MiscCog(commands.Cog):
     def __init__(self, bot):
+        self.db = pymongo.MongoClient(db_address)[db_name]
         self.client = bot
-        self.analyzer = Analysis_module(self.client, db)
+        self.analyzer = AnalysisModule(self.client, self.db)
 
     @commands.Cog.listener()
     async def on_message(self, ctx):
@@ -121,19 +122,19 @@ class MiscCog(commands.Cog):
         await self.client.process_commands(ctx)
         self.analyzer.save_message(ctx)
 
-    @cog_ext.cog_slash(name='StartTime')
+    @slash_command(name='start_time')
     async def send_start_time(self, ctx):
         embed = Embed(title='Bot working since ' + str(start_time.strftime('%b %d %Y %H:%M:%S') + ' UTC+03:00'))
         await ctx.send(embed=embed)
 
-    @cog_ext.cog_slash(name='Top')
+    @slash_command(name='top')
     async def send_top(self, ctx):
-        await ctx.defer()
+        await ctx.response.defer()
         await self.analyzer.get_userscores(ctx)
 
-    @cog_ext.cog_slash(name='Voice')
+    @slash_command(name='voice')
     async def send_voice_activity(self, ctx):
-        await ctx.defer()
+        await ctx.response.defer()
         await self.analyzer.get_voice_activity(ctx)
 
 

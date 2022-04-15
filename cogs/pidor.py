@@ -3,10 +3,9 @@ import json
 import modules.date as date
 import random
 
-from discord_slash import cog_ext
-from discord.ext import commands
-from discord.colour import Colour
-from discord import Embed
+from nextcord.ext import commands
+from nextcord.colour import Colour
+from nextcord import Embed, slash_command
 
 
 class PidorCog(commands.Cog):
@@ -31,9 +30,9 @@ class PidorCog(commands.Cog):
         except:
             pass
 
-    @cog_ext.cog_slash(name='pidor')
+    @slash_command(name='pidor')
     async def roll(self, ctx):
-        await ctx.defer()
+        await ctx.response.defer()
         cur_time = str(date.current())
         channel_id = str(ctx.guild.id)
         if channel_id not in self.pidor_channels.keys():
@@ -62,9 +61,9 @@ class PidorCog(commands.Cog):
                                 self.pidor_channels[channel_id]['pidor'], color=Colour.random())
             await ctx.send(embed=embed, delete_after=180.0)
 
-    @cog_ext.cog_slash(name='pidor_board')
+    @slash_command(name='pidor_board')
     async def get_pidor_stats(self, ctx):
-        await ctx.defer()
+        await ctx.response.defer()
         channel_id = str(ctx.guild.id)
         if channel_id not in self.pidor_stats.keys() or len(self.pidor_stats[channel_id]) == 0:
             embed = Embed(title="No stats for this server", color=Colour.blurple())

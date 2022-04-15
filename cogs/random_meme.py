@@ -1,9 +1,9 @@
-import discord
-import wavelink
+import nextcord
+from modules import wavelink
 import random
 import asyncio
 
-from discord.ext import commands
+from nextcord.ext import commands
 
 
 async def play_stuff(vc):
@@ -41,7 +41,7 @@ class RandomMeme(commands.Cog):
                         best_channel = None
                         max_people = 0
                         for channel in channels:
-                            if isinstance(channel, discord.VoiceChannel):
+                            if isinstance(channel, nextcord.VoiceChannel):
                                 c = self.bot.get_channel(channel.id)
                                 people = len(c.members)
                                 if people > max_people:
