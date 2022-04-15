@@ -5,7 +5,7 @@ db_name = 'TabaBotDB'
 pixiv_show_embed_illust = False
 use_selenium = False
 volume_lock = False
-safmallty = False
+safety = False
 
 wavelink_host = '127.0.0.1'
 wavelink_port = 2333
