@@ -193,7 +193,7 @@ class PixivCog(commands.Cog):
         filename = f'{str(illust.id)}.{img_type}'
         if num is not None:
             filename = f'{num}_{filename}'
-        if self.spoilers and illust.sanity_level >= 6:
+        if channel.guild.id in self.spoilers and self.spoilers[channel.guild.id] and illust.sanity_level >= 6:
             filename = f'SPOILER_{filename}'
         with BytesIO() as image_binary:
             img.save(image_binary, img.format)
@@ -344,7 +344,7 @@ class PixivCog(commands.Cog):
         server_id = ctx.guild.id
         if server_id not in self.spoilers:
             self.spoilers[server_id] = False
-        self.spoilers[server_id] = not self.spoilers
+        self.spoilers[server_id] = not self.spoilers[server_id]
         if self.spoilers[server_id]:
             embed = Embed(title="NSFW pictures now will be spoiled", color=Colour.green())
         else:
