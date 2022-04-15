@@ -1,6 +1,6 @@
 import nextcord
 from nextcord.ext import commands
-from config import token, db_address, db_name
+from config import token
 
 # client init
 intents = nextcord.Intents.all()
