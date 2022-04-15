@@ -68,14 +68,15 @@ class Analysis_module:
         df["length"] = df["content"].apply(lambda x: len(x))
         df["score"] = df["length"] * 0.1 + df["attachments_number"] * 5
         df = df.groupby(["author_id"]).sum()
+        df = df.reset_index()
 
         answer = "```"
-        for item in df:
-            answer += "#" + str(df[df['author_id'] == item['author_id']].index[0]) + " - " + str(item["score"]) + "\n"
-        answer = "```"
+        for item, row in df.iterrows():
+            answer += "#" + str(item + 1) + " " + str(await self.fetch_user(row["author_id"])) + " - " + str(row["score"]) + "\n"
+        answer += "```"
         embed = Embed(title="Top", description=answer)
         await ctx.send(embed=embed)
 
-    # async def fetch_user(self, id):
-    #     user = await self.discord_client.fetch_user(id)
-    #     return str(user.name) + "#" + str(user.discriminator)
+    async def fetch_user(self, id):
+        user = await self.discord_client.fetch_user(id)
+        return f'{str(user.name)}#{str(user.discriminator)}'
