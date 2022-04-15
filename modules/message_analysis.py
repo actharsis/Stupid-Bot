@@ -1,5 +1,4 @@
 import pandas as pd
-from nextcord import Embed, ChannelType
 from time import sleep
 from threading import *
 
@@ -9,6 +8,7 @@ class AnalysisModule:
         self.discord_client = client
         self.voice_activity_collection = db["voice_activity"]
         self.messages_collection = db["messages"]
+        self.voice_activity_thread = Thread(target = self.voice_activity_check)
         self.voice_activity_thread = Thread(target=self.voice_activity_check)
         self.voice_activity_thread.start()
         self.db = db
