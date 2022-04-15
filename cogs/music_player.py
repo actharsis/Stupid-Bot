@@ -156,7 +156,7 @@ def player_embed(player):
         embed.set_author(name='Currently playing:',
                          icon_url='https://cdn.discordapp.com/emojis/751692077779124316.gif')
     url = f'https://img.youtube.com/vi/{track.uri[32:]}/mqdefault.jpg'
-    if safety and is_nsfw(url):
+    if safety and is_nsfw(url) and not player.message.channel.nsfw:
         url = f'https://img.youtube.com/vi/nter2axWgoA/mqdefault.jpg'
     embed.set_image(url=url)
     return embed

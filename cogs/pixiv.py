@@ -4,11 +4,12 @@ import json
 import modules.date as date
 import os
 import random
+import requests
 import time
 
 from PIL import Image
-from config import pixiv_show_embed_illust, use_selenium
-from nextcord import Embed, File, slash_command, SlashOption
+from config import pixiv_show_embed_illust, use_selenium, safety
+from nextcord import Interaction, Embed, File, slash_command, SlashOption, TextInputStyle, ui
 from nextcord.colour import Colour
 from nextcord.ext import commands
 from io import BytesIO
@@ -34,6 +35,95 @@ class BetterAppPixivAPI(AppPixivAPI):
         }
         r = self.no_auth_requests_call('GET', url, params=params, req_auth=req_auth)
         return self.parse_result(r)
+
+
+class LoginModal(ui.Modal):
+    def __init__(self, ctx, pixiv) -> None:
+        super().__init__(title="Pixiv login form", custom_id="login_form")
+        self.ctx = ctx
+        self.pixiv = pixiv
+        self.add_item(
+            ui.TextInput(
+                label="Login",
+                placeholder="login@gmail.com",
+                custom_id="login",
+                style=TextInputStyle.short,
+                min_length=1,
+                required=True
+            )
+        )
+        self.add_item(
+            ui.TextInput(
+                label="Password",
+                placeholder="p@ssw0rd",
+                custom_id="password",
+                style=TextInputStyle.short,
+                min_length=1,
+                required=True
+            )
+        )
+
+    async def auth(self, login, password):
+        try:
+            token = await selenium_login(login, password)
+            if token is None:
+                await self.ctx.send(embed=Embed(title="Can't log in.\n"
+                                                      "Incorrect account details or captcha required :(\n"
+                                                      "Try pixiv token instead",
+                                                color=Colour.red()),
+                                    delete_after=10.0)
+                return
+            a = BetterAppPixivAPI(token=token)
+            server = str(self.ctx.guild.id)
+            self.pixiv.api[token] = a
+            self.pixiv.tokens[server] = {"value": token, "time": str(0)}
+            embed = Embed(title="Successfully logged in :)", color=Colour.green())
+            self.pixiv.save(tokens=True)
+        except:
+            embed = Embed(title="Can't log in with given token :(", color=Colour.red())
+        await self.ctx.send(embed=embed, delete_after=10.0)
+
+    async def callback(self, inter: Interaction) -> None:
+        login = self.children[0].value
+        password = self.children[1].value
+        await inter.response.send_message(embed=Embed(title="Task created", color=Colour.green()),
+                                          ephemeral=True, delete_after=5)
+        await self.auth(login, password)
+
+
+class TokenModal(ui.Modal):
+    def __init__(self, ctx, pixiv) -> None:
+        super().__init__(title="Pixiv token form", custom_id="login_form")
+        self.ctx = ctx
+        self.pixiv = pixiv
+        self.add_item(
+            ui.TextInput(
+                label="Refresh token",
+                placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                custom_id="token",
+                style=TextInputStyle.short,
+                min_length=1,
+                required=True
+            )
+        )
+
+    async def auth(self, token):
+        try:
+            a = BetterAppPixivAPI(token=token)
+            server = str(self.ctx.guild.id)
+            self.pixiv.api[token] = a
+            self.pixiv.tokens[server] = {"value": token, "time": str(0)}
+            embed = Embed(title="Successfully logged in :)", color=Colour.green())
+            self.pixiv.save(tokens=True)
+        except:
+            embed = Embed(title="Can't login with given token :(", color=Colour.red())
+        await self.ctx.send(embed=embed, delete_after=10.0)
+
+    async def callback(self, inter: Interaction) -> None:
+        token = self.children[0].value
+        await inter.response.send_message(embed=Embed(title="Task created", color=Colour.green()),
+                                          ephemeral=True, delete_after=5)
+        await self.auth(token)
 
 
 class PixivCog(commands.Cog):
@@ -73,7 +163,7 @@ class PixivCog(commands.Cog):
         except:
             pass
 
-    async def send_illust(self, api, illust, url, chat, num=None, show_title=False, color=None):
+    async def send_illust(self, api, illust, url, channel, num=None, show_title=False, color=None):
         img = api.download(url)
         img_type = url.split('.')[-1]
         filename = f'{str(illust.id)}.{img_type}'
@@ -85,36 +175,43 @@ class PixivCog(commands.Cog):
             img.save(image_binary, img.format)
             image_binary.seek(0)
             file = File(fp=image_binary, filename=filename)
+        if safety and illust.sanity_level > 4 and not channel.nsfw:
+            response = requests.get('https://img.youtube.com/vi/nter2axWgoA/mqdefault.jpg')
+            with BytesIO(response.content) as image_binary:
+                file = File(fp=image_binary, filename=filename)
         if show_title:
             title = illust.title
             if pixiv_show_embed_illust:
                 embed = Embed(description=f'Title: [{title}](https://www.pixiv.net/en/artworks/{illust.id})',
                               color=color)
                 embed.set_image(url=f'attachment://{filename}')
-                message = await chat.send(embed=embed, file=file)
+                message = await channel.send(embed=embed, file=file)
             else:
                 text = f'Title: {title}'
                 if len(illust.meta_pages) > 0:
                     text += f', {len(illust.meta_pages)} images'
-                message = await chat.send(text, file=file)
+                message = await channel.send(text, file=file)
         else:
-            message = await chat.send(file=file)
+            message = await channel.send(file=file)
         if illust.is_bookmarked:
             await message.add_reaction(emoji.emojize(':red_heart:'))
 
-    async def show_illust(self, api, illust_id, chat):
+    async def show_illust(self, api, illust_id, channel):
         try:
             illust = api.illust_detail(illust_id).illust
-            await chat.send(embed=Embed(title=f'Fetching illustration {illust.title} in original quality...',
-                                        color=Colour.green()), delete_after=5.0)
+            await channel.send(embed=Embed(title=f'Fetching illustration {illust.title} in original quality...',
+                                           color=Colour.green()), delete_after=5.0)
+            if isinstance(channel, Interaction):
+                channel = channel.channel
             if len(illust.meta_single_page) > 0:
                 url = illust.meta_single_page.original_image_url
-                await self.send_illust(api, illust, url, chat)
+                await self.send_illust(api, illust, url, channel)
             for idx, item in enumerate(illust.meta_pages):
                 url = item.image_urls.original
-                await self.send_illust(api, illust, url, chat, idx)
+                await self.send_illust(api, illust, url, channel, idx)
+            return True
         except:
-            await chat.send(embed=Embed(title=f'Fail', color=Colour.red()), delete_after=5.0)
+            await channel.send(embed=Embed(title=f'Fail', color=Colour.red()), delete_after=5.0)
             return None
 
     async def show_page(self, api, query, chat, limit=30, minimum_views=None, minimum_rate=None, max_sanity=6):
@@ -164,43 +261,13 @@ class PixivCog(commands.Cog):
         await ctx.send(embed=embed, delete_after=10.0)
 
     @slash_command(name="pixiv_token", description="Log in to Pixiv via refresh token")
-    async def pixiv_token(self, ctx,
-                          token: str = SlashOption(description="Your pixiv login", required=True)):
-        await ctx.response.defer()
-        try:
-            a = BetterAppPixivAPI(token=token)
-            server = str(ctx.guild.id)
-            self.api[token] = a
-            self.tokens[server] = {"value": token, "time": str(0)}
-            embed = Embed(title="Successfully logged in :)", color=Colour.green())
-            self.save(tokens=True)
-        except:
-            embed = Embed(title="Can't login with given token :(", color=Colour.red())
-        await ctx.send(embed=embed, delete_after=10.0)
+    async def pixiv_token(self, ctx):
+        await ctx.response.send_modal(modal=TokenModal(ctx, self))
 
     if use_selenium:
         @slash_command(name="pixiv_login", description="Log in to Pixiv")
-        async def pixiv_login(self, ctx,
-                              login: str = SlashOption(description="Your pixiv login", required=True),
-                              password: str = SlashOption(description="Your pixiv password", required=True)):
-            await ctx.response.defer()
-            try:
-                token = await selenium_login(login, password)
-                if token is None:
-                    await ctx.send(embed=Embed(title="Can't log in. Captcha required :(\n"
-                                                     "Try pixiv token instead",
-                                               color=Colour.red()),
-                                   delete_after=10.0)
-                    return
-                a = BetterAppPixivAPI(token=token)
-                server = str(ctx.guild.id)
-                self.api[token] = a
-                self.tokens[server] = {"value": token, "time": str(0)}
-                embed = Embed(title="Successfully logged in :)", color=Colour.green())
-                self.save(tokens=True)
-            except:
-                embed = Embed(title="Can't log in with given token :(", color=Colour.red())
-            await ctx.send(embed=embed, delete_after=10.0)
+        async def pixiv_login(self, ctx):
+            await ctx.response.send_modal(modal=LoginModal(ctx, self))
 
     @slash_command(name="pixiv_status", description="Show pixiv connection status")
     async def pixiv_status(self, ctx):
@@ -465,7 +532,6 @@ class PixivCog(commands.Cog):
     @slash_command(name='illust', description='Get pixiv illustration by ID')
     async def get_illust(self, ctx,
                          idx: str = SlashOption(description="Illustration ID", required=True)):
-        await ctx.response.defer()
         await self.show_illust(self.get_api(ctx.guild.id), idx, ctx)
 
     @commands.Cog.listener()
@@ -481,9 +547,21 @@ class PixivCog(commands.Cog):
         except TypeError:
             demojized = None
         if payload.user_id != self.bot.user.id:
-            if message.attachments is not None and len(message.attachments) == 1 and \
-                    message.author == self.bot.user:
-                illust_id = message.attachments[0].filename.split('.')[0].split('_')[-1]
+            if message.attachments is not None and message.author == self.bot.user:
+                illust_id = None
+                lock_info = False
+                if len(message.attachments) == 1:
+                    illust_id = message.attachments[0].filename.split('.')[0].split('_')[-1]
+                    if not illust_id.isnumeric():
+                        illust_id = None
+                try:
+                    if message.embeds[0].fields[1].name == "Pixiv ID":
+                        illust_id = message.embeds[0].fields[1].value
+                        lock_info = True
+                except:
+                    pass
+                if illust_id is None:
+                    return
                 emojis = {':red_heart:', ':growing_heart:', ':magnifying_glass_tilted_left:', ':seedling:',
                           ':broken_heart:', ':red_question_mark:', ':elephant:', ':face_vomiting:'}
                 if demojized in emojis:
@@ -504,19 +582,19 @@ class PixivCog(commands.Cog):
                     except:
                         await message.add_reaction(emoji.emojize(':thumbs_down:'))
                 elif demojized == ':magnifying_glass_tilted_left:':
-                    r = await self.show_illust(api, illust_id, message.channel)
-                    if r:
+                    try:
                         await message.add_reaction(emoji.emojize(':thumbs_up:'))
-                    else:
+                        await self.show_illust(api, illust_id, message.channel)
+                    except:
                         await message.add_reaction(emoji.emojize(':thumbs_down:'))
                 elif demojized == ':seedling:':
                     try:
-                        await message.add_reaction(emoji.emojize(':thumbs_up:'))
                         query = api.illust_related(illust_id)
+                        await message.add_reaction(emoji.emojize(':thumbs_up:'))
                         await self.show_page(api, query, message.channel, limit=5)
                     except:
                         await message.add_reaction(emoji.emojize(':thumbs_down:'))
-                elif demojized == ':face_vomiting:':
+                elif demojized == ':face_vomiting:' and not lock_info:
                     await message.delete()
                 elif demojized == ':broken_heart:':
                     try:
@@ -527,7 +605,7 @@ class PixivCog(commands.Cog):
                         await message.add_reaction(emoji.emojize(':broken_heart:'))
                     except:
                         await message.add_reaction(emoji.emojize(':thumbs_down:'))
-                elif demojized == ':red_question_mark:':
+                elif demojized == ':red_question_mark:' and not lock_info:
                     try:
                         await message.add_reaction(emoji.emojize(':thumbs_up:'))
                         illust = api.illust_detail(illust_id).illust
@@ -538,12 +616,14 @@ class PixivCog(commands.Cog):
                                 tags += f' - {tag.translated_name}'
                             tags += ', '
                         tags = tags[:-2]
-                        embed = Embed(title="Illustration info:",
-                                      description=f'Title: [{illust.title}](https://www.pixiv.net/en/artworks/{illust.id})'
-                                                  f', ID: {illust.id}'
-                                                  f'\n\nViews: {illust.total_view}, Bookmarks: {illust.total_bookmarks}'
-                                                  f'\n\nTags: {tags}',
-                                      color=Colour.green())
+                        embed = Embed(title="Illustration info:", color=Colour.green())
+                        embed.add_field(name="Title:",
+                                        value=f"[{illust.title}](https://www.pixiv.net/en/artworks/{illust.id})",
+                                        inline=False)
+                        embed.add_field(name="ID:", value=illust_id, inline=True)
+                        embed.add_field(name="Views:", value=illust.total_view, inline=True)
+                        embed.add_field(name="Bookmarks:", value=illust.total_bookmarks, inline=True)
+                        embed.add_field(name="Tags:", value=tags, inline=False)
                         await message.edit(embed=embed, suppress=False)
                         await asyncio.sleep(20)
                         await message.edit(suppress=True)
