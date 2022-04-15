@@ -56,10 +56,10 @@ async def cringe(ctx):
             'Origin': 'https://yandex.ru',
             'Referer': 'https://yandex.ru/',
         }
-        API_URL = 'https://zeapi.yandex.net/lab/api/yalm/text3'
+        api_url = 'https://zeapi.yandex.net/lab/api/yalm/text3'
         payload = {"query": query, "intro": 1, "filter": 1}
         params = json.dumps(payload).encode('utf8')
-        req = urllib.request.Request(API_URL, data=params, headers=headers)
+        req = urllib.request.Request(api_url, data=params, headers=headers)
         response = urllib.request.urlopen(req)
 
         msg = json.loads(response.read())['text']
@@ -129,12 +129,10 @@ class MiscCog(commands.Cog):
 
     @slash_command(name='top')
     async def send_top(self, ctx):
-        await ctx.response.defer()
-        await self.analyzer.get_userscores(ctx)
+        await self.analyzer.get_user_scores(ctx)
 
     @slash_command(name='voice')
     async def send_voice_activity(self, ctx):
-        await ctx.response.defer()
         await self.analyzer.get_voice_activity(ctx)
 
 
