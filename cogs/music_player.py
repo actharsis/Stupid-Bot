@@ -730,7 +730,7 @@ class MusicPlayerCog(commands.Cog):
             return
 
         user = self.bot.get_user(payload.user_id)
-        if server_id not in self.players or self.players[server_id].messages.id != message.id:
+        if server_id not in self.players or self.players[server_id].message.id != message.id:
             return
         if payload.user_id != self.bot.user.id:
             await message.add_reaction(emoji.emojize(':angry_face:'))

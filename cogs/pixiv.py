@@ -14,27 +14,28 @@ from nextcord.colour import Colour
 from nextcord.ext import commands
 from io import BytesIO
 from modules.pixiv_auth import refresh_token, selenium_login
-from pixivpy3 import *
+from pixivpy_async import *
 
 
 class BetterAppPixivAPI(AppPixivAPI):
-    def __init__(self, token, **requests_kwargs):
+    def __init__(self, **requests_kwargs):
         super(AppPixivAPI, self).__init__(**requests_kwargs)
-        self.hosts = 'https://app-api.pixiv.net'
-        self.auth(refresh_token=token)
 
-    def download(self, url, prefix='', path=os.path.curdir, name=None, replace=False, fname=None,
-                 referer='https://app-api.pixiv.net/'):
-        with self.requests_call('GET', url, headers={'Referer': referer}, stream=True) as response:
-            return Image.open(response.raw)
+    async def download(self, url, prefix='', path=os.path.curdir, fname=None, auto_ext=True,
+                       name=None, replace=False, referer='https://app-api.pixiv.net/'):
+        stream = await self.down(url, referer, _request_content_type=False)
+        response = await stream.__anext__()
+        await stream.aclose()
+        return Image.open(BytesIO(response))
 
-    def search_autocomplete(self, word, req_auth=True):
-        url = '%s/v2/search/autocomplete' % self.hosts
+    async def search_autocomplete(self, word, req_auth=True):
+        hosts = 'https://app-api.pixiv.net'
+        method = 'GET'
+        url = '%s/v2/search/autocomplete' % hosts
         params = {
             'word': word,
         }
-        r = self.no_auth_requests_call('GET', url, params=params, req_auth=req_auth)
-        return self.parse_result(r)
+        return await self.requests_(method=method, url=url, params=params, auth=req_auth)
 
 
 class LoginModal(ui.Modal):
@@ -73,7 +74,8 @@ class LoginModal(ui.Modal):
                                                 color=Colour.red()),
                                     delete_after=10.0)
                 return
-            a = BetterAppPixivAPI(token=token)
+            a = BetterAppPixivAPI()
+            await a.login(refresh_token=token)
             server = str(self.ctx.guild.id)
             self.pixiv.api[token] = a
             self.pixiv.tokens[server] = {"value": token, "time": str(0)}
@@ -109,7 +111,8 @@ class TokenModal(ui.Modal):
 
     async def auth(self, token):
         try:
-            a = BetterAppPixivAPI(token=token)
+            a = BetterAppPixivAPI()
+            await a.login(refresh_token=token)
             server = str(self.ctx.guild.id)
             self.pixiv.api[token] = a
             self.pixiv.tokens[server] = {"value": token, "time": str(0)}
@@ -126,6 +129,14 @@ class TokenModal(ui.Modal):
         await self.auth(token)
 
 
+def good_image(illust, minimum_views, minimum_rate, max_sanity):
+    if minimum_views is not None and illust.total_view < minimum_views or \
+            minimum_rate is not None and illust.total_bookmarks / illust.total_view * 100 < minimum_rate or \
+            max_sanity < illust.sanity_level:
+        return False
+    return True
+
+
 class PixivCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -137,7 +148,11 @@ class PixivCog(commands.Cog):
         self.last_type = {}
         self.token_expiration_time = None
         self.spoilers = {}
-        self.load()
+        self.fetched = {}
+        self.queues = asyncio.Queue(0)
+        self.queues.put_nowait(0)
+        self.bot.loop.create_task(self.load())
+        self.delay = 1
 
     def save(self, channels=False, timers=False, tokens=False):
         if channels:
@@ -150,7 +165,7 @@ class PixivCog(commands.Cog):
             with open('json/pixiv_tokens.json', 'w') as file:
                 file.write(json.dumps(self.tokens))
 
-    def load(self):
+    async def load(self):
         try:
             with open('json/auto_pixiv_channels.json', 'r') as file:
                 self.channels = json.load(file)
@@ -159,12 +174,21 @@ class PixivCog(commands.Cog):
             with open('json/pixiv_tokens.json', 'r') as file:
                 self.tokens = json.load(file)
             for guild, item in self.tokens.items():
-                self.api[item["value"]] = BetterAppPixivAPI(token=item["value"])
+                token = item["value"]
+                self.api[token] = BetterAppPixivAPI()
+                await self.api[token].login(refresh_token=token)
         except:
             pass
 
+    async def waited_download(self, api, url):
+        req_time = await self.queues.get()
+        new_time = max(req_time + self.delay, time.time() + self.delay)
+        await self.queues.put(new_time)
+        await asyncio.sleep(req_time - time.time())
+        return await api.download(url)
+
     async def send_illust(self, api, illust, url, channel, num=None, show_title=False, color=None):
-        img = api.download(url)
+        img = await self.waited_download(api, url)
         img_type = url.split('.')[-1]
         filename = f'{str(illust.id)}.{img_type}'
         if num is not None:
@@ -198,7 +222,7 @@ class PixivCog(commands.Cog):
 
     async def show_illust(self, api, illust_id, channel):
         try:
-            illust = api.illust_detail(illust_id).illust
+            illust = (await api.illust_detail(illust_id)).illust
             await channel.send(embed=Embed(title=f'Fetching illustration {illust.title} in original quality...',
                                            color=Colour.green()), delete_after=5.0)
             if isinstance(channel, Interaction):
@@ -214,23 +238,22 @@ class PixivCog(commands.Cog):
             await channel.send(embed=Embed(title=f'Fail', color=Colour.red()), delete_after=5.0)
             return None
 
-    async def show_page(self, api, query, chat, limit=30, minimum_views=None, minimum_rate=None, max_sanity=6):
+    async def show_page(self, api, query, chat, limit=30,
+                        minimum_views=None, minimum_rate=None, max_sanity=6, dry_run=False):
         if chat is None or query is None or query.illusts is None or len(query.illusts) == 0:
             return 0, 0, False
         shown = 0
-        print('fetched', len(query.illusts), 'images')
+        # print('fetched', len(query.illusts), 'images')
         color = Colour.random()
         for illust in query.illusts:
+            if not good_image(illust, minimum_views, minimum_rate, max_sanity):
+                continue
+            if not dry_run:
+                self.bot.loop.create_task(self.send_illust(api, illust, illust.image_urls.large,
+                                                           chat, show_title=True, color=color))
+            shown += 1
             if shown == limit:
                 break
-            if minimum_views is not None and illust.total_view < minimum_views:
-                continue
-            if minimum_rate is not None and illust.total_bookmarks / illust.total_view * 100 < minimum_rate:
-                continue
-            if max_sanity < illust.sanity_level:
-                continue
-            await self.send_illust(api, illust, illust.image_urls.large, chat, show_title=True, color=color)
-            shown += 1
         return shown, len(query.illusts), True
 
     async def show_page_embed(self, api, query, query_type, chat, limit=None, save_query=True, user_id=None):
@@ -338,12 +361,12 @@ class PixivCog(commands.Cog):
         await ctx.response.defer()
         api = self.get_api(ctx.guild.id)
         if ctx.user.id in self.last_query:
-            next_qs = api.parse_qs(self.last_query[ctx.user.id].next_url)
+            next_qs = await api.parse_qs(self.last_query[ctx.user.id].next_url)
             query = None
             if self.last_type[ctx.user.id] == 'recommended':
-                query = api.illust_recommended(**next_qs)
+                query = await api.illust_recommended(**next_qs)
             elif self.last_type[ctx.user.id] == 'best':
-                query = api.illust_ranking(**next_qs)
+                query = await api.illust_ranking(**next_qs)
             embed = await self.show_page_embed(api, query, self.last_type[ctx.user.id], ctx.channel,
                                                limit, save_query=True, user_id=ctx.user.id)
         else:
@@ -360,7 +383,7 @@ class PixivCog(commands.Cog):
         await ctx.response.defer()
         api = self.get_api(ctx.guild.id)
         try:
-            query = api.illust_recommended()
+            query = await api.illust_recommended()
             embed = await self.show_page_embed(api, query, 'recommended', ctx.channel, limit,
                                                save_query=True, user_id=ctx.user.id)
         except:
@@ -396,7 +419,7 @@ class PixivCog(commands.Cog):
         await ctx.response.defer()
         api = self.get_api(ctx.guild.id)
         try:
-            query = api.illust_ranking(mode=mode, date=from_date, offset=None)
+            query = await api.illust_ranking(mode=mode, date=from_date, offset=None)
             embed = await self.show_page_embed(api, query, 'best', ctx.channel, limit,
                                                save_query=True, user_id=ctx.user.id)
         except:
@@ -422,7 +445,7 @@ class PixivCog(commands.Cog):
                                           required=True)):
         api = self.get_api(ctx.guild.id)
         try:
-            query = api.search_autocomplete(word)
+            query = await api.search_autocomplete(word)
             tags = ''
             for i, tag in enumerate(query.tags):
                 tags += str(i) + '. ' + tag.name
@@ -434,6 +457,43 @@ class PixivCog(commands.Cog):
         except:
             embed = Embed(title="Authentication required!\nCall /pixiv_login first for more info", color=Colour.red())
         await ctx.send(embed=embed, delete_after=30.0)
+
+    async def recursive_find(self, api, ctx, word, match, limit,
+                             views, rate, max_sanity_level, selected_date,
+                             offset=0, fetched=0, shown=0, rv=None):
+        find_next = False
+        query = None
+        if shown < limit and fetched < 250:
+            query = await api.search_illust(word, search_target=match,
+                                            end_date=selected_date, offset=offset)
+            alive = True
+            if len(query.illusts) == 0 and selected_date < date.current():
+                selected_date = date.next_year(selected_date)
+                offset = 0
+            else:
+                good, total, alive = await self.show_page(api, query, ctx.channel, limit - shown,
+                                                          views, rate, max_sanity_level, dry_run=True)
+                shown += good
+                self.fetched[rv] += total
+                if alive:
+                    offset += total
+            if alive:
+                find_next = True
+        if find_next:
+            self.bot.loop.create_task(
+                self.recursive_find(api, ctx, word, match, limit,
+                                    views, rate, max_sanity_level, selected_date,
+                                    offset=offset, fetched=fetched, shown=shown, rv=rv)
+            )
+            self.bot.loop.create_task(
+                self.show_page(api, query, ctx.channel, limit - shown, views, rate, max_sanity_level)
+            )
+        else:
+            embed = Embed(title="Find with word " + word + " called",
+                          description=str(self.fetched[rv]) + " images fetched in total",
+                          color=Colour.green())
+            self.fetched.pop(rv)
+            await ctx.send(embed=embed, delete_after=10.0)
 
     @slash_command(name='find', description='Find illustrations that satisfy the filters from random point of time')
     async def find(self, ctx,
@@ -482,12 +542,13 @@ class PixivCog(commands.Cog):
                    period: str = SlashOption(
                        description="Random Date period (no impact if from_date given)",
                        choices={
+                           "very new": date.back_in_months(3),
                            "new": date.back_in_months(1 * 12),
                            "2 years range": date.back_in_months(2 * 12),
                            "3 years range": date.back_in_months(3 * 12),
                            "6 years range": date.back_in_months(6 * 12),
                            "9 years range": date.back_in_months(9 * 12),
-                           "all time period" : date.back_in_months(14 * 12)
+                           "all time period": date.back_in_months(14 * 12)
                        },
                        default=date.back_in_months(4 * 12),
                        required=False
@@ -499,35 +560,21 @@ class PixivCog(commands.Cog):
                    )):
         await ctx.response.defer()
         api = self.get_api(ctx.guild.id)
-        channel = ctx.channel
         try:
-            word = api.search_autocomplete(word).tags[0].name
+            word = (await api.search_autocomplete(word)).tags[0].name
         except:
             pass
         selected_date = date.random(period, date.current(), random.random())
         if date.is_valid(from_date):
             selected_date = from_date
-        fetched, shown, offset, alive = 0, 0, 0, True
+        rv = random.random()
+        self.fetched[rv] = 0
         try:
-            while shown < limit and alive and fetched < 500:
-                query = api.search_illust(word, search_target=match,
-                                          end_date=selected_date, offset=offset)
-                if len(query.illusts) == 0 and selected_date < date.current():
-                    selected_date = date.next_year(selected_date)
-                    offset = 0
-                    continue
-                good, total, alive = await self.show_page(api, query, channel, limit - shown,
-                                                          views, rate, max_sanity_level)
-                shown += good
-                fetched += total
-                if alive:
-                    offset += total
-            embed = Embed(title="Find with word " + word + " called",
-                          description=str(fetched) + " images fetched in total",
-                          color=Colour.green())
+            await self.recursive_find(api, ctx, word, match, limit, views, rate,
+                                      max_sanity_level, selected_date, 0, 0, 0, rv)
         except:
             embed = Embed(title="Authentication required!\nCall /pixiv_login first for more info", color=Colour.red())
-        await ctx.send(embed=embed, delete_after=10.0)
+            await ctx.send(embed=embed, delete_after=10.0)
 
     @slash_command(name='illust', description='Get pixiv illustration by ID')
     async def get_illust(self, ctx,
@@ -555,7 +602,7 @@ class PixivCog(commands.Cog):
                     if not illust_id.isnumeric():
                         illust_id = None
                 try:
-                    if message.embeds[0].fields[1].name == "Pixiv ID":
+                    if "Pixiv ID" in message.embeds[0].fields[1].name:
                         illust_id = message.embeds[0].fields[1].value
                         lock_info = True
                 except:
@@ -569,15 +616,15 @@ class PixivCog(commands.Cog):
 
                 if demojized == ':red_heart:' or demojized == ':elephant:':
                     try:
-                        api.illust_bookmark_add(illust_id)
+                        await api.illust_bookmark_add(illust_id)
                         await message.add_reaction(emoji.emojize(':red_heart:'))
                     except:
                         await message.add_reaction(emoji.emojize(':thumbs_down:'))
                 elif demojized == ':growing_heart:':
                     try:
-                        api.illust_bookmark_add(illust_id)
+                        await api.illust_bookmark_add(illust_id)
                         await message.add_reaction(emoji.emojize(':red_heart:'))
-                        query = api.illust_related(illust_id)
+                        query = await api.illust_related(illust_id)
                         await self.show_page(api, query, message.channel, limit=5)
                     except:
                         await message.add_reaction(emoji.emojize(':thumbs_down:'))
@@ -589,7 +636,7 @@ class PixivCog(commands.Cog):
                         await message.add_reaction(emoji.emojize(':thumbs_down:'))
                 elif demojized == ':seedling:':
                     try:
-                        query = api.illust_related(illust_id)
+                        query = await api.illust_related(illust_id)
                         await message.add_reaction(emoji.emojize(':thumbs_up:'))
                         await self.show_page(api, query, message.channel, limit=5)
                     except:
@@ -598,7 +645,7 @@ class PixivCog(commands.Cog):
                     await message.delete()
                 elif demojized == ':broken_heart:':
                     try:
-                        api.illust_bookmark_delete(illust_id)
+                        await api.illust_bookmark_delete(illust_id)
                         for r in message.reactions:
                             if r.me:
                                 await r.remove(self.bot.user)
@@ -608,7 +655,7 @@ class PixivCog(commands.Cog):
                 elif demojized == ':red_question_mark:' and not lock_info:
                     try:
                         await message.add_reaction(emoji.emojize(':thumbs_up:'))
-                        illust = api.illust_detail(illust_id).illust
+                        illust = (await api.illust_detail(illust_id)).illust
                         tags = ""
                         for tag in illust.tags:
                             tags += f'{tag.name}'
@@ -645,7 +692,7 @@ class PixivCog(commands.Cog):
                 timestamp = time.time()
                 if channel_id not in self.timers.keys() or timestamp - self.timers[channel_id] > refresh_time:
                     self.timers[str(channel_id)] = timestamp
-                    query = api.illust_recommended()
+                    query = await api.illust_recommended()
                     await self.show_page(api, query, channel, limit=limit)
                     self.save(timers=True)
         except RuntimeError:
@@ -657,7 +704,7 @@ class PixivCog(commands.Cog):
             if int(self.tokens[server_id]['time']) - timestamp < 1000:
                 token, ttl = refresh_token(self.tokens[server_id]['value'])
                 self.tokens[server_id]['time'] = str(int(timestamp + ttl))
-                self.api[token].auth(refresh_token=token)
+                await self.api[token].login(refresh_token=token)
                 print('pixiv token updated')
 
     @commands.Cog.listener()

@@ -53,7 +53,7 @@ class RandomMeme(commands.Cog):
                 pass
 
     @commands.Cog.listener()
-    async def on_wavelink_track_end(self, player: modules.wavelink.player, track: wavelink.Track, reason):
+    async def on_wavelink_track_end(self, player: wavelink.player, track: wavelink.Track, reason):
         await player.disconnect()
 
 
