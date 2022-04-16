@@ -82,13 +82,15 @@ async def soft_leave_vc(player):
 
 
 async def soft_message_delete(player):
+    msg = player.message
     await asyncio.sleep(10)
     if not player.is_playing():
         try:
-            await player.message.delete()
+            await msg.delete()
         except:
             pass
-        player.message = None
+        if player.message == msg:
+            player.message = None
 
 
 def build_queue_embed(player):
@@ -164,13 +166,13 @@ def player_embed(player):
             url = f'https://img.youtube.com/vi/nter2axWgoA/mqdefault.jpg'
         embed.set_image(url=url)
     else:
-        embed = Embed(description=f"**Nothing**\n"
+        embed = Embed(description=f"**Nothing is playing**\n"
                                   f"**Length**: *{time_to_str(0)}*; **Volume**: *{int(player.volume)}*\n"
                                   f"**Timeline**: *{short_time(0)}/{short_time(0)}*\n"
                                   f"```{render_bar(36, 1, 1)}```"
                                   f"{'*On repeat*' if player.loop else ''}",
                       color=Colour.blurple())
-        embed.set_author(name='Stopped:',
+        embed.set_author(name='Stopped.',
                          icon_url='https://cdn.discordapp.com/emojis/884559976016805888.webp')
         embed.set_image(url='https://media.discordapp.net/attachments/959918146238689364/964988238852935770/cirno.gif')
     return embed
@@ -183,7 +185,8 @@ async def play_next(player: wavelink.player):
 
 
 async def message_auto_update(player):
-    while player.message is not None:
+    msg = player.message
+    while player.message is not None and player.message == msg:
         try:
             view = PlayerView(player)
             await player.message.edit(
@@ -295,16 +298,17 @@ class PlayerView(View):
         self.player_components()
 
     def player_components(self):
+        disabled = not self.player.is_connected()
         self.add_item(Button(custom_id="prev", style=ButtonStyle.blurple,
-                             emoji=emoji.emojize(':last_track_button:'), row=0))
+                             emoji=emoji.emojize(':last_track_button:'), row=0, disabled=disabled))
         self.add_item(Button(custom_id="back", style=ButtonStyle.green,
-                             emoji=emoji.emojize(':reverse_button:'), row=0))
+                             emoji=emoji.emojize(':reverse_button:'), row=0, disabled=disabled))
         self.add_item(Button(custom_id="pause", style=ButtonStyle.green,
-                             emoji=emoji.emojize(':pause_button:'), row=0))
+                             emoji=emoji.emojize(':pause_button:'), row=0, disabled=disabled))
         self.add_item(Button(custom_id="forw", style=ButtonStyle.green,
-                             emoji=emoji.emojize(':play_button:'), row=0))
+                             emoji=emoji.emojize(':play_button:'), row=0, disabled=disabled))
         self.add_item(Button(custom_id="next", style=ButtonStyle.blurple,
-                             emoji=emoji.emojize(':next_track_button:'), row=0))
+                             emoji=emoji.emojize(':next_track_button:'), row=0, disabled=disabled))
         if not volume_lock:
             if self.player.volume > 0:
                 self.add_item(Button(label="Mute", custom_id="mute",
@@ -315,10 +319,12 @@ class PlayerView(View):
         else:
             self.add_item(Button(label="Mute", custom_id="mute", disabled=True,
                                  emoji=emoji.emojize(':muted_speaker:'), row=1))
-        self.add_item(Button(label="Loop", custom_id="repeat", emoji=emoji.emojize(':repeat_button:'), row=1))
-        self.add_item(Button(label="Log", custom_id="history", emoji=emoji.emojize(':scroll:'), row=1))
+        self.add_item(Button(label="Loop", custom_id="repeat",
+                             emoji=emoji.emojize(':repeat_button:'), row=1))
+        self.add_item(Button(label="Log", custom_id="history",
+                             emoji=emoji.emojize(':scroll:'), row=1))
         self.add_item(Button(label="Quit", custom_id="stop", style=ButtonStyle.red,
-                             emoji=emoji.emojize(':black_large_square:'), row=1))
+                             emoji=emoji.emojize(':black_large_square:'), row=1, disabled=disabled))
 
         options = []
         for i, item in enumerate(self.player.queue):
@@ -449,17 +455,19 @@ class MusicPlayerCog(commands.Cog):
         player.message = msg
         self.bot.loop.create_task(message_auto_update(player))
 
+    async def change_vc(self, server_id, vc):
+        if server_id not in self.players:
+            self.players[server_id] = await vc.connect(cls=ExtPlayer)
+        elif not self.players[server_id].is_connected():
+            await self.players[server_id].move_to(vc)
+            self.players[server_id].connect()
+
     async def update_server_player(self, ctx, vc):
         server_id = ctx.guild.id
         try:
             if vc is None:
-                if server_id not in self.players:
-                    self.players[server_id] = await ctx.user.voice.channel.connect(cls=ExtPlayer)
-            else:
-                if server_id not in self.players:
-                    self.players[server_id] = await vc.connect(cls=ExtPlayer)
-                else:
-                    await self.players[server_id].move_to(vc)
+                vc = ctx.user.voice.channel
+            await self.change_vc(server_id, vc)
         except:
             await ctx.send(embed=Embed(title="Which voice channel?", color=Colour.green()), delete_after=10.0)
             return 0
@@ -559,14 +567,17 @@ class MusicPlayerCog(commands.Cog):
     async def spawn_player(self, ctx):
         await ctx.response.defer()
         server_id = ctx.guild.id
-        if server_id not in self.players or not self.players[server_id].is_playing():
-            await ctx.send(embed=Embed(title=f"Nothing is playing", color=Colour.red()), delete_after=5)
+        if server_id not in self.players:
+            await ctx.send(embed=Embed(title=f"Player not initialized", color=Colour.red()), delete_after=5)
         else:
             await ctx.send(embed=Embed(title=f"Player respawned", color=Colour.green()), delete_after=5)
             player = self.players[server_id]
             player.ctx = ctx.channel
-            await player.message.delete()
-            player.message = None
+            try:
+                await player.message.delete()
+                player.message = None
+            except:
+                pass
             await self.player_message(player)
 
     @slash_command(name='shuffle', description='Queue random shuffle')
@@ -587,13 +598,11 @@ class MusicPlayerCog(commands.Cog):
                    vc: GuildChannel = SlashOption(channel_types=[ChannelType.voice], default=None, required=True)):
         await ctx.response.defer()
         server_id = ctx.guild.id
-        if server_id in self.players and self.players[server_id].is_playing():
+        if server_id in self.players and self.players[server_id].is_connected():
             try:
-                player = self.players[server_id]
                 if vc is None:
-                    await player.move_to(ctx.author.voice.channel)
-                else:
-                    await player.move_to(vc)
+                    vc = ctx.user.voice.channel
+                await self.change_vc(server_id, vc)
                 embed = Embed(title=f"Ok", color=Colour.green())
             except:
                 embed = Embed(title=f"Can't move in this channel", color=Colour.red())
