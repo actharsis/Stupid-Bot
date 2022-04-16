@@ -76,15 +76,18 @@ async def get_track(queue):
 
 
 async def soft_leave_vc(player):
-    await asyncio.sleep(5)
+    await asyncio.sleep(10)
     if not player.is_playing():
         await player.disconnect()
 
 
 async def soft_message_delete(player):
-    await asyncio.sleep(5)
+    await asyncio.sleep(10)
     if not player.is_playing():
-        await player.message.delete()
+        try:
+            await player.message.delete()
+        except:
+            pass
         player.message = None
 
 
@@ -143,22 +146,33 @@ def build_history_embed(player):
 
 def player_embed(player):
     track = player.track
-    embed = Embed(description=f"[**{track.title}**]({track.uri})\n"
-                              f"**Length**: *{time_to_str(track.length)}*; **Volume**: *{int(player.volume)}*\n"
-                              f"**{' ' * 40}Timeline**: *{short_time(player.position)}/{short_time(track.length)}*\n"
-                              f"```{render_bar(36, player.position, track.length)}```"
-                              f"{'*On repeat*' if player.loop else ''}",
-                  color=Colour.blurple())
-    if player.is_paused():
-        embed.set_author(name='On pause:',
-                         icon_url='https://cdn.discordapp.com/emojis/884559976016805888.webp')
+    if track is not None:
+        embed = Embed(description=f"[**{track.title}**]({track.uri})\n"
+                                  f"**Length**: *{time_to_str(track.length)}*; **Volume**: *{int(player.volume)}*\n"
+                                  f"**Timeline**: *{short_time(player.position)}/{short_time(track.length)}*\n"
+                                  f"```{render_bar(36, player.position, track.length)}```"
+                                  f"{'*On repeat*' if player.loop else ''}",
+                      color=Colour.blurple())
+        if player.is_paused():
+            embed.set_author(name='On pause:',
+                             icon_url='https://cdn.discordapp.com/emojis/884559976016805888.webp')
+        else:
+            embed.set_author(name='Currently playing:',
+                             icon_url='https://cdn.discordapp.com/emojis/751692077779124316.gif')
+        url = f'https://img.youtube.com/vi/{track.uri[32:]}/mqdefault.jpg'
+        if safety and is_nsfw(url) and not player.message.channel.nsfw:
+            url = f'https://img.youtube.com/vi/nter2axWgoA/mqdefault.jpg'
+        embed.set_image(url=url)
     else:
-        embed.set_author(name='Currently playing:',
-                         icon_url='https://cdn.discordapp.com/emojis/751692077779124316.gif')
-    url = f'https://img.youtube.com/vi/{track.uri[32:]}/mqdefault.jpg'
-    if safety and is_nsfw(url) and not player.message.channel.nsfw:
-        url = f'https://img.youtube.com/vi/nter2axWgoA/mqdefault.jpg'
-    embed.set_image(url=url)
+        embed = Embed(description=f"**Nothing**\n"
+                                  f"**Length**: *{time_to_str(0)}*; **Volume**: *{int(player.volume)}*\n"
+                                  f"**Timeline**: *{short_time(0)}/{short_time(0)}*\n"
+                                  f"```{render_bar(36, 1, 1)}```"
+                                  f"{'*On repeat*' if player.loop else ''}",
+                      color=Colour.blurple())
+        embed.set_author(name='Stopped:',
+                         icon_url='https://cdn.discordapp.com/emojis/884559976016805888.webp')
+        embed.set_image(url='https://media.discordapp.net/attachments/959918146238689364/964988238852935770/cirno.gif')
     return embed
 
 
@@ -177,8 +191,6 @@ async def message_auto_update(player):
                 view=view
             )
         except AttributeError:
-            await player.message.delete()
-            player.message = None
             return
         await asyncio.sleep(3)
 
@@ -451,7 +463,8 @@ class MusicPlayerCog(commands.Cog):
         except:
             await ctx.send(embed=Embed(title="Which voice channel?", color=Colour.green()), delete_after=10.0)
             return 0
-        self.players[server_id].ctx = ctx.channel
+        if self.players[server_id].ctx is None:
+            self.players[server_id].ctx = ctx.channel
         return 1
 
     @slash_command(name='spotify', description="Play something from Spotify")
@@ -481,9 +494,6 @@ class MusicPlayerCog(commands.Cog):
             await ctx.send(embed=Embed(title=f"'**{playlist.name}**' is now playing",
                                        color=Colour.green()),
                            delete_after=10.0)
-        if player.message is not None:
-            await player.message.delete()
-            player.message = None
         await play_next(player)
 
     @slash_command(name='play', description='Play a song from Youtube')
@@ -512,9 +522,6 @@ class MusicPlayerCog(commands.Cog):
             await ctx.send(embed=Embed(title=f"Song '**{track.title}**' (*{short_time(track.length)}*) is now playing",
                                        color=Colour.green()),
                            delete_after=10.0)
-        if player.message is not None:
-            await player.message.delete()
-            player.message = None
         await play_next(player)
 
     @slash_command(name='playlist', description='Add playlist')
@@ -546,9 +553,6 @@ class MusicPlayerCog(commands.Cog):
             await ctx.send(embed=Embed(title=f"Playlist '**{playlist.name}**' is now playing",
                                        color=Colour.green()),
                            delete_after=10.0)
-        if player.message is not None:
-            await player.message.delete()
-            player.message = None
         await play_next(player)
 
     @slash_command(name='spawn_player', description='Resend player body')
@@ -583,7 +587,7 @@ class MusicPlayerCog(commands.Cog):
                    vc: GuildChannel = SlashOption(channel_types=[ChannelType.voice], default=None, required=True)):
         await ctx.response.defer()
         server_id = ctx.guild.id
-        if server_id in self.players:
+        if server_id in self.players and self.players[server_id].is_playing():
             try:
                 player = self.players[server_id]
                 if vc is None:
@@ -646,7 +650,7 @@ class MusicPlayerCog(commands.Cog):
     @slash_command(name='stfu', description='Stop current song and clear song queue')
     async def disconnect(self, ctx):
         server_id = ctx.guild.id
-        if server_id in self.players:
+        if server_id in self.players and self.players[server_id].is_playing():
             player = self.players[server_id]
             player.queue.clear()
             player.loop = False
