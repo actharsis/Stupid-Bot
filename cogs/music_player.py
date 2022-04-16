@@ -177,6 +177,7 @@ async def message_auto_update(player):
                 view=view
             )
         except AttributeError:
+            await player.message.delete()
             player.message = None
             return
         await asyncio.sleep(3)

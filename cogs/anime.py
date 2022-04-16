@@ -4,6 +4,7 @@ import emoji
 import requests
 import urllib.parse
 
+from PIL import Image
 from nextcord import Embed, File
 from nextcord.ext import commands
 from saucenao_api import AIOSauceNao
@@ -127,6 +128,11 @@ class Anime(commands.Cog):
                     tr_sim = int(trace['similarity'] * 100)
                 except KeyError:
                     tr_sim = 0
+                response = requests.get(url)
+                with io.BytesIO(response.content) as img_bytes:
+                    image = Image.open(img_bytes)
+                    if image.width < image.height:
+                        tr_sim = 0
                 if tr_sim < 88:
                     tr_sim = 0
 
