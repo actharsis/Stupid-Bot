@@ -460,10 +460,10 @@ class PixivCog(commands.Cog):
 
     async def recursive_find(self, api, ctx, word, match, limit,
                              views, rate, max_sanity_level, selected_date,
-                             offset=0, fetched=0, shown=0, rv=None):
+                             offset=0, shown=0, rv=None, lvl=0):
         find_next = False
         query = None
-        if shown < limit and fetched < 250:
+        if shown < limit and lvl < 10:
             query = await api.search_illust(word, search_target=match,
                                             end_date=selected_date, offset=offset)
             alive = True
@@ -483,7 +483,7 @@ class PixivCog(commands.Cog):
             self.bot.loop.create_task(
                 self.recursive_find(api, ctx, word, match, limit,
                                     views, rate, max_sanity_level, selected_date,
-                                    offset=offset, fetched=fetched, shown=shown, rv=rv)
+                                    offset=offset, shown=shown, rv=rv, lvl=lvl+1)
             )
             self.bot.loop.create_task(
                 self.show_page(api, query, ctx.channel, limit - shown, views, rate, max_sanity_level)
@@ -519,8 +519,8 @@ class PixivCog(commands.Cog):
                        required=False
                    ),
                    views: int = SlashOption(
-                       description="Required minimum amount of views (default = 10000)",
-                       default=10000,
+                       description="Required minimum amount of views (default = 5000)",
+                       default=5000,
                        min_value=0,
                        max_value=100000,
                        required=False
@@ -571,7 +571,7 @@ class PixivCog(commands.Cog):
         self.fetched[rv] = 0
         try:
             await self.recursive_find(api, ctx, word, match, limit, views, rate,
-                                      max_sanity_level, selected_date, 0, 0, 0, rv)
+                                      max_sanity_level, selected_date, 0, 0, rv, 0)
         except:
             embed = Embed(title="Authentication required!\nCall /pixiv_login first for more info", color=Colour.red())
             await ctx.send(embed=embed, delete_after=10.0)
