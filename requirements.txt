@@ -10,3 +10,4 @@ saucenao_api>=2.4.0
 pandas>=1.4.2
 PixivPy-Async>=1.2.14
 pymongo
+PIL
