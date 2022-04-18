@@ -37,11 +37,7 @@ class SelectView(View):
         )
         if cog and cog.description:
             embed.description = f"{cog.description}"
-        try:
-            await interaction.response.send_message(content=None)
-        except:
-            pass
-        await interaction.message.edit(embed=embed)
+        await interaction.response.edit_message(embed=embed)
         return True
 
 

@@ -284,8 +284,12 @@ class PlayerView(View):
                              emoji=emoji.emojize(':last_track_button:'), row=0))
         self.add_item(Button(custom_id="back", style=ButtonStyle.green,
                              emoji=emoji.emojize(':reverse_button:'), row=0))
-        self.add_item(Button(custom_id="pause", style=ButtonStyle.green,
-                             emoji=emoji.emojize(':pause_button:'), row=0))
+        if self.player.is_paused():
+            self.add_item(Button(custom_id="pause", style=ButtonStyle.red,
+                                 emoji=emoji.emojize(':pause_button:'), row=0))
+        else:
+            self.add_item(Button(custom_id="pause", style=ButtonStyle.green,
+                                 emoji=emoji.emojize(':pause_button:'), row=0))
         self.add_item(Button(custom_id="forw", style=ButtonStyle.green,
                              emoji=emoji.emojize(':play_button:'), row=0))
         self.add_item(Button(custom_id="next", style=ButtonStyle.blurple,
@@ -386,6 +390,7 @@ class PlayerView(View):
                 await get_track(self.player.queue)
             self.player.loop = False
             await self.player.stop()
+        await interaction.response.edit_message()
         return True
 
 
