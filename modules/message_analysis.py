@@ -12,8 +12,8 @@ class AnalysisModule:
         self.discord_client = client
         self.voice_activity_collection = db["voice_activity"]
         self.messages_collection = db["messages"]
-        asyncio.create_task(self.voice_activity_check())
         self.db = db
+        client.loop.create_task(self.voice_activity_check())
 
     def __del__(self):
         self.voice_activity_collection.update_many({"session_ended": False}, {"$set": {"session_ended": True}})
@@ -104,8 +104,3 @@ class AnalysisModule:
         except KeyError:
             embed = Embed(title="Top", description="Empty.")
         await ctx.response.send_message(embed=embed, ephemeral=True)
-
-
-async def fetch_user(self, idx):
-    user = await self.discord_client.fetch_user(idx)
-    return str(user.name) + "#" + str(user.discriminator)
