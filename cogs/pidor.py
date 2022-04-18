@@ -27,7 +27,7 @@ class PidorCog(commands.Cog):
                 self.pidor_channels = json.load(file)
             with open('json/pidor_stats.json', 'r') as file:
                 self.pidor_stats = json.load(file)
-        except (json.JSONDecodeError, TypeError):
+        except (json.JSONDecodeError, TypeError, FileNotFoundError):
             pass
 
     @slash_command(name='pidor')
