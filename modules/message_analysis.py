@@ -1,6 +1,5 @@
 import pandas as pd
-from time import sleep
-from threading import *
+import asyncio
 from nextcord import Embed, ChannelType
 
 
@@ -13,9 +12,7 @@ class AnalysisModule:
         self.discord_client = client
         self.voice_activity_collection = db["voice_activity"]
         self.messages_collection = db["messages"]
-        self.voice_activity_thread = Thread(target=self.voice_activity_check)
-        self.voice_activity_thread = Thread(target=self.voice_activity_check)
-        self.voice_activity_thread.start()
+        asyncio.create_task(self.voice_activity_check())
         self.db = db
 
     def __del__(self):
@@ -37,7 +34,7 @@ class AnalysisModule:
             embed = Embed(title="Voice activity", description="Empty.")
         await ctx.send(embed=embed, ephemeral=True)
 
-    def voice_activity_check(self):  # make adding new users to active list
+    async def voice_activity_check(self):  # make adding new users to active list
         while True:
             active_users = self.get_active_voice_users()
 
@@ -64,7 +61,7 @@ class AnalysisModule:
                         "session_active": True
                     }
                     self.voice_activity_collection.insert_one(new_item)
-            sleep(5)
+            await asyncio.sleep(60)
 
     def get_active_voice_users(self):
         active_users = {}

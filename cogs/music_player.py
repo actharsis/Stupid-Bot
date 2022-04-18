@@ -343,6 +343,7 @@ class PlayerView(View):
         if custom_id == 'prev':
             if self.player.history:
                 prev = self.player.history.pop()['track']
+                self.player.loop = False
                 if self.player.is_playing():
                     self.player.queue.appendleft(prev)
                     await self.player.stop()
@@ -384,6 +385,7 @@ class PlayerView(View):
             await self.player.stop()
         elif custom_id == 'history':
             await interaction.response.send_message(embed=build_history_embed(self.player), ephemeral=True)
+            return True
         elif custom_id == 'queue_list':
             value = interaction.data['values'][0]
             for i in range(int(value)):
