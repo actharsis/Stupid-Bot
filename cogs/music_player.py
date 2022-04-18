@@ -759,6 +759,12 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
 
         user = self.bot.get_user(payload.user_id)
         if server_id not in self.players or self.players[server_id].message.id != message.id:
+            try:
+                text = message.embeds[0].description
+                if 'Length' in text and 'Volume' in text and 'Timeline' in text:
+                    await message.delete()
+            except:
+                pass
             return
         if payload.user_id != self.bot.user.id:
             await message.add_reaction(emoji.emojize(':angry_face:'))
