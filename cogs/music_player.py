@@ -389,7 +389,25 @@ class PlayerView(View):
         return True
 
 
-class MusicPlayerCog(commands.Cog):
+class MusicPlayerCog(commands.Cog, name="Music player"):
+    """
+    **Music cog** - music player. Designed for control via buttons.
+
+    ***Available commands:***
+
+    **/play** - play song by name (also url from youtube/soundcloud supported)
+    **/playlist** - play youtube playlist
+    **/spotify** - play spotify playlist
+
+    **/seek** - play from the specified second
+    **/skip** - skip current song
+    **/pause** - pause/continue
+    **/stfu** - clear queue and stop playing
+
+    **/queue** - song queue
+    **/history** - song history
+    """
+
     def __init__(self, bot):
         self.bot = bot
         self.bot.loop.create_task(self.connect_nodes())

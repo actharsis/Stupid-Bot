@@ -8,7 +8,16 @@ from nextcord.colour import Colour
 from nextcord import Embed, slash_command
 
 
-class PidorCog(commands.Cog):
+class PidorCog(commands.Cog, name="Pidor"):
+    """
+    **Pidor cog** - misc feature, randomly chooses one person
+    on the server and calls him a faggot once a day.
+
+    ***Available commands***:
+    **/pidor** - call feature
+    **/pidor_board** - show leaderboard
+    """
+
     def __init__(self, bot):
         self.bot = bot
         self.pidor_channels = {}

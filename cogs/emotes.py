@@ -30,7 +30,35 @@ def mimic(ctx, text):
     return text, user, resend
 
 
-class Emotes(commands.Cog):
+class EmotesCog(commands.Cog, name="Emotes"):
+    """
+    **Emotes cog** - allows you to use reactions that require a discord nitro subscription.
+
+    Technically, it just replace your message with a webhook that impersonates you
+    if your message contain a reaction that need a subscription.
+
+    To make it work, you need to /subscribe to be replaced by a bot when needed.
+
+    Use /add to add specific reaction in bot DB. It's not gonna work without that.
+
+    For non-nitro users:
+    Copy link of needed emoji, then take it's id
+    For example:
+    https://cdn.discordapp.com/emojis/262941483232002048.webp?size=128&quality=lossless
+    Id of this emoji is **262941483232002048**
+    Then build a valid emoji by mask
+    ***<:emoji_name:emoji_id>*** - if it is a static emoji
+    ***<a:emoji_name:emoji_id>*** - if it's an animated emoji
+    For the same example, proper add usage:
+    /add emoji:<:cirno_blush:262941483232002048>
+
+    ***Available commands***:
+    **/subscribe** - make this feature enabled for you
+    **/add** - add emoji to the DB
+
+    You also can try typing 'mimicry user_id text' to do nasty things with this cog...
+    """
+
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.reactions = {}
@@ -152,4 +180,4 @@ class Emotes(commands.Cog):
 
 
 def setup(bot):
-    bot.add_cog(Emotes(bot))
+    bot.add_cog(EmotesCog(bot))

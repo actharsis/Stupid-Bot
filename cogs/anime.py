@@ -105,7 +105,22 @@ async def send_sauce_nao(message, sauce, characters=None):
     await message.reply(embed=embed)
 
 
-class Anime(commands.Cog):
+class AnimeCog(commands.Cog, name="Anime Search Engine"):
+    """
+    **Anime cog** - anime search engine.
+
+    Using ***SauceNAO*** and ***TraceMoe*** for your queries.
+    Finds ***anime***, ***illustrations*** and ***manga***.
+    Identifies the names of the characters if possible.
+    If an image is found on pixiv, the result *supports all pixiv reactions*.
+
+    To use, send blank message with image URL or add image in attachments
+    and then use reaction :question: to find the source of the image.
+
+    ***Available reactions***:
+    :question: - image info
+    """
+
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
@@ -165,4 +180,4 @@ class Anime(commands.Cog):
 
 
 def setup(bot):
-    bot.add_cog(Anime(bot))
+    bot.add_cog(AnimeCog(bot))

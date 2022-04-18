@@ -137,7 +137,51 @@ def good_image(illust, minimum_views, minimum_rate, max_sanity):
     return True
 
 
-class PixivCog(commands.Cog):
+class PixivCog(commands.Cog, name="Pixiv"):
+    """
+    **Pixiv cog** - interaction with pixiv. Allows you to search
+    by name and use filters, see similar, add to favorites, see
+    recommended and much more.
+
+    To use this cog, you need to authenticate once on your server.
+    Please create an empty pixiv account and then use /pixiv_login
+    to authenticate. I don't keep entered logins and passwords and
+    I use them to get refresh_token via automatic queries.
+
+    DO NOT GIVE ME DATA FROM YOUR MAIN ACCOUNT.
+    **I DON'T NEED IT**.
+
+    If /pixiv_login is disabled or not working, use /pixiv_token and
+    paste your refresh token in form. A guide on how to get a
+    refresh_token at the link below (required python 3):
+    https://gist.github.com/ZipFile/c9ebedb224406f4f11845ab700124362
+
+    Use /pixiv_status to check your connection to api
+    and /pixiv_logout to remove your token from my db.
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ***Authenticate is required to work on multiple servers and for
+    unique recommendations. Read how to do that in the text above.***
+
+    ***Available commands***:
+    **/find** - find images by specific name/tag
+    **/start_auto_pixiv** - send recommendations in a certain quantity
+    once in a while in a current channel
+    **/when** - time until next auto recommendations
+    **/best** - show best images in specific category
+    **/recommended** - show your recommendations
+    **/illust** - find image by pixiv id
+    **/spoil_nsfw** - on/off nsfw picture spoiler
+    **/next** - command to display the next stack of pictures (wip)
+
+    ***Picture reactions (works only on pixiv images)***:
+    :heart: or :elephant: - bookmark image
+    :broken_heart: - remove from bookmarks
+    :seedling: - show 5 similar images
+    :mag: - show all images of this work in original quality
+    :question: - image info
+    :face_vomiting: - delete image
+    """
+
     def __init__(self, bot):
         self.bot = bot
         self.api = {}
