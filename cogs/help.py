@@ -53,9 +53,9 @@ class HelpCog(commands.Cog, name="Help"):
             icon_url="https://cdn.discordapp.com/emojis/695126170508984351.gif?&quality=lossless")
         embed.description = (
             f'All features are divided into the categories below.\n'
-            f'This message *will be deleted* after **5** minutes.'
+            f'This message *will be deleted* after **10** minutes.'
         )
-        await ctx.response.send_message(embed=embed, view=SelectView(self.bot.cogs), delete_after=300)
+        await ctx.response.send_message(embed=embed, view=SelectView(self.bot.cogs), ephemeral=True, delete_after=600)
 
 
 def setup(bot):
