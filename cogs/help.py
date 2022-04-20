@@ -1,8 +1,8 @@
-import nextcord
 import emoji
+import nextcord
+from nextcord import Interaction, SelectOption, slash_command
 from nextcord.ext import commands
-from nextcord import slash_command, SelectOption, Interaction
-from nextcord.ui import View, Select
+from nextcord.ui import Select, View
 
 
 class SelectView(View):
@@ -15,7 +15,7 @@ class SelectView(View):
     def load_cogs(self):
         options = []
         counter = 1
-        for i, item in enumerate(self.cogs.items()):
+        for item in self.cogs.items():
             value = item[0]
             cog = item[1]
             if value in self.hidden_cogs:
@@ -51,10 +51,7 @@ class HelpCog(commands.Cog, name="Help"):
         embed.set_author(
             name="Help page",
             icon_url="https://cdn.discordapp.com/emojis/695126170508984351.gif?&quality=lossless")
-        embed.description = (
-            f'All features are divided into the categories below.\n'
-            f'This message *will be deleted* after **5** minutes.'
-        )
+        embed.description = 'All features are divided into the categories below.\\n'
         await ctx.response.send_message(embed=embed, view=SelectView(self.bot.cogs), delete_after=300)
 
 

@@ -1,11 +1,12 @@
 import asyncio
+import contextlib
 import json
-import modules.date as date
 import random
 
-from nextcord.ext import commands
-from nextcord.colour import Colour
+import modules.date as date
 from nextcord import Embed, slash_command
+from nextcord.colour import Colour
+from nextcord.ext import commands
 
 
 class PidorCog(commands.Cog, name="Pidor"):
@@ -31,13 +32,11 @@ class PidorCog(commands.Cog, name="Pidor"):
             file.write(json.dumps(self.pidor_stats))
 
     def load(self):
-        try:
+        with contextlib.suppress(json.JSONDecodeError, TypeError, FileNotFoundError):
             with open('json/pidor_channels.json', 'r') as file:
                 self.pidor_channels = json.load(file)
             with open('json/pidor_stats.json', 'r') as file:
                 self.pidor_stats = json.load(file)
-        except (json.JSONDecodeError, TypeError, FileNotFoundError):
-            pass
 
     @slash_command(name='pidor')
     async def roll(self, ctx):
@@ -53,8 +52,9 @@ class PidorCog(commands.Cog, name="Pidor"):
                                        color=Colour.random()), delete_after=15.0)
             await asyncio.sleep(3)
             for i in range(5, 0, -1):
-                await ctx.send(embed=Embed(title="COUNTDOWN: " + str(i),
-                                           color=Colour.random()), delete_after=12.0 - i)
+                await ctx.send(embed=Embed(
+                    title=f"COUNTDOWN: {str(i)}", color=Colour.random()), delete_after=12.0 - i)
+
                 await asyncio.sleep(1)
             idx = random.randint(0, len(ctx.guild.members) - 1)
             user = str(ctx.guild.members[idx])
@@ -62,7 +62,7 @@ class PidorCog(commands.Cog, name="Pidor"):
             self.pidor_channels[channel_id]['time'] = cur_time
             self.pidor_stats.setdefault(channel_id, {}).setdefault(user, 0)
             self.pidor_stats[channel_id][user] += 1
-            embed = Embed(title="Pidor of the day: " + user, color=Colour.purple())
+            embed = Embed(title=f"Pidor of the day: {user}", color=Colour.purple())
             self.save()
             await ctx.send(embed=embed)
         else:
@@ -85,8 +85,8 @@ class PidorCog(commands.Cog, name="Pidor"):
             for idx, item in enumerate(stats):
                 count = item[0]
                 user = item[1]
-                text += str(idx + 1) + '. ' + user
-                text += ' (chosen ' + str(count) + ' ' + ('time' if count == 1 else 'times') + ')\n'
+                text += f'{str(idx + 1)}. {user}'
+                text += f' (chosen {str(count)} ' + ('time' if count == 1 else 'times') + ')\n'
             embed = Embed(title="Pidor leaderboard:", description=text, color=Colour.blurple())
         await ctx.send(embed=embed, delete_after=180.0)
 

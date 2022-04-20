@@ -1,6 +1,7 @@
-import nextcord
-import io
 import contextlib
+import io
+
+import nextcord
 from nextcord.ext import commands
 from nextcord.ui import Modal, TextInput
 

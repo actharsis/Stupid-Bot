@@ -2,19 +2,21 @@
 import asyncio
 import json
 import re
-
-import requests
 from base64 import urlsafe_b64encode
 from hashlib import sha256
 from secrets import token_urlsafe
+
+import requests
 from config import use_selenium
 
 if use_selenium:
     from urllib.parse import urlencode
+
     from selenium import webdriver
     from selenium.webdriver import ActionChains
     from selenium.webdriver.common.by import By
-    from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
+    from selenium.webdriver.common.desired_capabilities import \
+        DesiredCapabilities
     from webdriver_manager.chrome import ChromeDriverManager
 
 # To get first refresh token use script from this link:
@@ -72,9 +74,11 @@ def oauth_pkce(transform):
 
 async def selenium_login(log, pwd):
     caps = DesiredCapabilities.CHROME.copy()
-    caps["goog:loggingPrefs"] = {"performance": "ALL"}  # enable performance logs
+    caps["goog:loggingPrefs"] = {
+        "performance": "ALL"}  # enable performance logs
 
-    driver = webdriver.Chrome(ChromeDriverManager().install(), desired_capabilities=caps)
+    driver = webdriver.Chrome(
+        ChromeDriverManager().install(), desired_capabilities=caps)
     code_verifier, code_challenge = oauth_pkce(s256)
     login_params = {
         "code_challenge": code_challenge,
@@ -84,10 +88,13 @@ async def selenium_login(log, pwd):
 
     driver.get(f"{LOGIN_URL}?{urlencode(login_params)}")
     log_field = driver.find_element(By.CSS_SELECTOR,
-                                  '#LoginComponent > form > div.input-field-group > div:nth-child(1)')
+                                    '#LoginComponent > form >\
+                                    div.input-field-group > div:nth-child(1)')
     pass_field = driver.find_element(By.CSS_SELECTOR,
-                                  '#LoginComponent > form > div.input-field-group > div:nth-child(2)')
-    button = driver.find_element(By.CSS_SELECTOR, '#LoginComponent > form > button')
+                                     '#LoginComponent > form >\
+                                     div.input-field-group > div:nth-child(2)')
+    button = driver.find_element(
+        By.CSS_SELECTOR, '#LoginComponent > form > button')
     ActionChains(driver).\
         send_keys_to_element(log_field, log).\
         send_keys_to_element(pass_field, pwd).\
@@ -95,7 +102,7 @@ async def selenium_login(log, pwd):
     #
 
     ok = False
-    for i in range(60):
+    for _ in range(60):
         # wait for login
         if driver.current_url[:40] == "https://accounts.pixiv.net/post-redirect":
             ok = True
