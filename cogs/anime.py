@@ -8,10 +8,10 @@ from nextcord import Embed, File
 from nextcord.ext import commands
 from PIL import Image
 from saucenao_api import AIOSauceNao
-from config import safety, saucenao_token
+from config import SAFETY, SAUCENAO_TOKEN
 
 
-if safety:
+if SAFETY:
     from modules.predict import is_nsfw
 
 
@@ -79,7 +79,7 @@ async def find_best_sauce(url):
     sauce = None
     characters = None
     try:
-        sauce = await AIOSauceNao(saucenao_token).from_url(url)
+        sauce = await AIOSauceNao(SAUCENAO_TOKEN).from_url(url)
         best = None
         for i, item in enumerate(sauce.results):
             if sauce.results[0].similarity - item.similarity < 4 and item.index_id == 5 and best is None:
@@ -111,7 +111,7 @@ async def send_trace_moe(message, trace, characters=None):
     if characters is not None and len(characters) > 0:
         embed.add_field(name="Characters:", value=characters, inline=False)
     thumbnail = info['data']['Media']['coverImage']['large']
-    if safety and is_nsfw(thumbnail) and not message.channel.nsfw:
+    if SAFETY and is_nsfw(thumbnail) and not message.channel.nsfw:
         await message.reply(embed=embed)
         return
     embed.set_thumbnail(url=thumbnail)
@@ -136,7 +136,7 @@ async def send_sauce_nao(message, sauce, characters=None):
     embed.add_field(name="Similarity:", value=f"{sauce.similarity}%", inline=True)
     if characters is not None and len(characters) > 0:
         embed.add_field(name="Characters:", value=characters, inline=False)
-    if safety and is_nsfw(sauce.thumbnail) and not message.channel.nsfw:
+    if SAFETY and is_nsfw(sauce.thumbnail) and not message.channel.nsfw:
         await message.reply(embed=embed)
         return
     embed.set_thumbnail(url=sauce.thumbnail)

@@ -9,7 +9,7 @@ from io import BytesIO
 import emoji
 import modules.date as date
 import requests
-from config import pixiv_show_embed_illust, safety, use_selenium
+from config import PIXIV_SHOW_EMBED_ILLUST, SAFETY, USE_SELENIUM
 from modules.pixiv_auth import refresh_token, selenium_login
 from nextcord import (Embed, File, Interaction, SlashOption, TextInputStyle,
                       slash_command, ui)
@@ -245,14 +245,14 @@ class PixivCog(commands.Cog, name="Pixiv"):
             img.save(image_binary, img.format)
             image_binary.seek(0)
             file = File(fp=image_binary, filename=filename)
-        if safety and illust.sanity_level > 4 and not channel.nsfw:
+        if SAFETY and illust.sanity_level > 4 and not channel.nsfw:
             response = requests.get(
                 'https://img.youtube.com/vi/nter2axWgoA/mqdefault.jpg')
             with BytesIO(response.content) as image_binary:
                 file = File(fp=image_binary, filename=filename)
         if show_title:
             title = illust.title
-            if pixiv_show_embed_illust:
+            if PIXIV_SHOW_EMBED_ILLUST:
                 embed = Embed(description=f'Title: [{title}](https://www.pixiv.net/en/artworks/{illust.id})',
                               color=color)
                 embed.set_image(url=f'attachment://{filename}')
@@ -337,7 +337,7 @@ class PixivCog(commands.Cog, name="Pixiv"):
     async def pixiv_token(self, ctx):
         await ctx.response.send_modal(modal=TokenModal(ctx, self))
 
-    if use_selenium:
+    if USE_SELENIUM:
         @slash_command(name="pixiv_login", description="Log in to Pixiv")
         async def pixiv_login(self, ctx):
             await ctx.response.send_modal(modal=LoginModal(ctx, self))

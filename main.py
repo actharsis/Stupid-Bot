@@ -1,7 +1,7 @@
 import nextcord
 from nextcord.ext import commands
 
-from config import token
+from config import TOKEN
 
 # client init
 intents = nextcord.Intents.all()
@@ -16,4 +16,4 @@ extensions = ['cogs.misc', 'cogs.pixiv', 'cogs.pidor', 'cogs.emotes',
 for extension in extensions:
     client.load_extension(extension)
 
-client.run(token)
+client.run(TOKEN)

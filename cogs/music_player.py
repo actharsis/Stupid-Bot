@@ -18,7 +18,7 @@ from nextcord.colour import Colour
 from nextcord.ext import commands
 from nextcord.ui import Button, Select, View
 
-if safety:
+if SAFETY:
     from modules.predict import is_nsfw
 
 
@@ -142,7 +142,7 @@ def player_embed(player):
             embed.set_author(name='Currently playing:',
                              icon_url='https://cdn.discordapp.com/emojis/751692077779124316.gif')
         url = f'https://img.youtube.com/vi/{track.uri[32:]}/mqdefault.jpg'
-        if safety and is_nsfw(url) and not player.message.channel.nsfw:
+        if SAFETY and is_nsfw(url) and not player.message.channel.nsfw:
             url = 'https://img.youtube.com/vi/nter2axWgoA/mqdefault.jpg'
         embed.set_image(url=url)
     else:
@@ -293,7 +293,7 @@ class PlayerView(View):
                              emoji=emoji.emojize(':play_button:'), row=0))
         self.add_item(Button(custom_id="next", style=ButtonStyle.blurple,
                              emoji=emoji.emojize(':next_track_button:'), row=0))
-        if volume_lock:
+        if VOLUME_LOCK:
             self.add_item(Button(label="Mute", custom_id="mute", disabled=True,
                                  emoji=emoji.emojize(':muted_speaker:'), row=1))
         elif self.player.volume > 0:
@@ -423,12 +423,12 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
     async def connect_nodes(self):
         await self.bot.wait_until_ready()
         await wavelink.NodePool.create_node(bot=self.bot,
-                                            host=wavelink_host,
-                                            port=wavelink_port,
-                                            password=wavelink_password,
+                                            host=WAVELINK_HOST,
+                                            port=WAVELINK_PORT,
+                                            password=WAVELINK_PASSWORD,
                                             spotify_client=spotify.SpotifyClient(
-                                                client_id=spotify_client_id,
-                                                client_secret=spotify_client_secret))
+                                                client_id=SPOTIFY_CLIENT_ID,
+                                                client_secret=SPOTIFY_CLIENT_SECRET))
 
     @commands.Cog.listener()
     async def on_wavelink_node_ready(self, node: Node):
@@ -723,7 +723,7 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
     async def volume(self, ctx, value: int = SlashOption(description="Volume value", required=True)):
         await ctx.response.defer()
         server_id = ctx.guild.id
-        if volume_lock:
+        if VOLUME_LOCK:
             await ctx.send(embed=Embed(
                 title="This feature is disabled", color=Colour.red()
             ), delete_after=10.0)
