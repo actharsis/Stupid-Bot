@@ -7,9 +7,9 @@ from hashlib import sha256
 from secrets import token_urlsafe
 
 import requests
-from config import use_selenium
+from config import USE_SELENIUM
 
-if use_selenium:
+if USE_SELENIUM:
     from urllib.parse import urlencode
 
     from selenium import webdriver

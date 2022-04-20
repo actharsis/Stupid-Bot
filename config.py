@@ -1,15 +1,16 @@
-token = ''
-db_address = '127.0.0.1'
-db_name = 'TabaBotDB'
+"""Config file"""
+TOKEN = ''
+DB_ADDRESS = '127.0.0.1'
+DB_NAME = 'TabaBotDB'
 
-pixiv_show_embed_illust = False
-use_selenium = False
-volume_lock = False
-safety = False
+PIXIV_SHOW_EMBED_ILLUST = False
+USE_SELENIUM = False
+VOLUME_LOCK = False
+SAFETY = False
 
-wavelink_host = '127.0.0.1'
-wavelink_port = 2333
-wavelink_password = ''
-spotify_client_id = ''
-spotify_client_secret = ''
-saucenao_token = ''
+WAVELINK_HOST = '127.0.0.1'
+WAVELINK_PORT = 2333
+WAVELINK_PASSWORD = ''
+SPOTIFY_CLIENT_ID = ''
+SPOTIFY_CLIENT_SECRET = ''
+SAUCENAO_TOKEN = ''

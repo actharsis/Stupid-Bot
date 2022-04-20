@@ -4,11 +4,12 @@ import urllib.parse
 import aiohttp
 import emoji
 import requests
-from config import safety, saucenao_token
 from nextcord import Embed, File
 from nextcord.ext import commands
 from PIL import Image
 from saucenao_api import AIOSauceNao
+from config import safety, saucenao_token
+
 
 if safety:
     from modules.predict import is_nsfw

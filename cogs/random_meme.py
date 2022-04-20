@@ -2,9 +2,9 @@ import asyncio
 import contextlib
 import random
 
+from nextcord.ext import commands
 import nextcord
 from modules import wavelink
-from nextcord.ext import commands
 
 
 async def play_stuff(vc):

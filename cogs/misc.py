@@ -3,12 +3,13 @@ import random
 import urllib.request
 from datetime import datetime
 
-import constants
-import pymongo
-from config import db_address, db_name
-from modules.message_analysis import AnalysisModule
 from nextcord import Embed, slash_command
 from nextcord.ext import commands
+import pymongo
+import constants
+from config import DB_ADDRESS, DB_NAME
+from modules.message_analysis import AnalysisModule
+
 
 start_time = datetime.now()
 start_time.isoformat(sep='T')
@@ -95,7 +96,7 @@ async def reference_reaction(ctx, client):
 
 class MiscCog(commands.Cog):
     def __init__(self, bot):
-        self.db = pymongo.MongoClient(db_address)[db_name]
+        self.db = pymongo.MongoClient(DB_ADDRESS)[DB_NAME]
         self.client = bot
         self.analyzer = AnalysisModule(self.client, self.db)
 
