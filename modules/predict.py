@@ -2,11 +2,12 @@
 
 import io
 from os.path import exists
-from PIL import Image
+
 import numpy as np
 import requests
 import tensorflow as tf
 import tensorflow_hub as hub
+from PIL import Image
 
 IMAGE_DIM = 224  # required/default image dimensionality
 
@@ -33,16 +34,16 @@ def load_images(uri, image_size):
 
 def load_model(model_path):
     if model_path is None or not exists(model_path):
-        raise ValueError("saved_model_path must be the valid directory of a saved model to load.")
+        raise ValueError("saved_model_path must be the valid \
+            directory of a saved model to load.")
 
-    model = tf.keras.models.load_model(model_path, custom_objects={'KerasLayer': hub.KerasLayer})
-    return model
+    return tf.keras.models.load_model(model_path, custom_objects={
+        'KerasLayer': hub.KerasLayer})
 
 
 def classify(uri, image_dim=IMAGE_DIM):
     images, image_paths = load_images(uri, (image_dim, image_dim))
-    prob = classify_nd(images)
-    return prob
+    return classify_nd(images)
 
 
 def is_nsfw(uri):
@@ -59,11 +60,9 @@ def classify_nd(nd_images):
 
     categories = ['drawings', 'hentai', 'neutral', 'porn', 'sexy']
 
-    for i, single_preds in enumerate(model_preds):
-        single_probs = {}
-        for j, pred in enumerate(single_preds):
-            single_probs[categories[j]] = float(pred)
-        return single_probs
+    for single_preds in model_preds:
+        return {
+            categories[j]: float(pred) for j, pred in enumerate(single_preds)}
 
 
 model = load_model('./mobilenet_v2_140_224/saved_model.h5')

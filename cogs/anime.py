@@ -1,14 +1,14 @@
-import aiohttp
 import io
-import emoji
-import requests
 import urllib.parse
 
-from PIL import Image
+import aiohttp
+import emoji
+import requests
+from config import safety, saucenao_token
 from nextcord import Embed, File
 from nextcord.ext import commands
+from PIL import Image
 from saucenao_api import AIOSauceNao
-from config import saucenao_token, safety
 
 if safety:
     from modules.predict import is_nsfw
@@ -39,7 +39,7 @@ def anilist(idx):
 
 
 def short_time(time):
-    return f"{int(time // 60)}:{int(time % int(60))}"
+    return f"{int(time // 60)}:{int(time % 60)}"
 
 
 def get_url(message):
@@ -136,9 +136,9 @@ class AnimeCog(commands.Cog, name="Anime Search Engine"):
         if not message.author.bot and message.author.id == payload.user_id and demojized == ":red_question_mark:":
             url = get_url(message)
             if url is not None:
-                trace = requests.get("https://api.trace.moe/search?cutBorders&url={}".
-                                     format(urllib.parse.quote_plus(url))
-                                     ).json()['result'][0]
+                trace = requests.get(f"https://api.trace.moe/search?cutBorders&url={urllib.parse.quote_plus(url)}")\
+                    .json()['result'][0]
+
                 try:
                     tr_sim = int(trace['similarity'] * 100)
                 except KeyError:
@@ -165,7 +165,7 @@ class AnimeCog(commands.Cog, name="Anime Search Engine"):
                         best = 0
                     sauce = sauce.results[best]
                     snao_sim = sauce.similarity
-                except:
+                except Exception:
                     snao_sim = 0
 
                 if max(tr_sim, snao_sim) < 55:

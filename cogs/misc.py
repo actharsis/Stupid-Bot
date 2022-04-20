@@ -1,15 +1,14 @@
 import json
-import pymongo
 import random
-import constants
 import urllib.request
-
 from datetime import datetime
+
+import constants
+import pymongo
+from config import db_address, db_name
 from modules.message_analysis import AnalysisModule
 from nextcord import Embed, slash_command
 from nextcord.ext import commands
-from config import db_address, db_name
-
 
 start_time = datetime.now()
 start_time.isoformat(sep='T')
@@ -30,10 +29,7 @@ if len(lines) > 0:
 
 
 def get_special_replies(author_id):
-    if author_id in replies:
-        return replies[author_id]
-    else:
-        return []
+    return replies[author_id] if author_id in replies else []
 
 
 async def random_vot_da(ctx):
@@ -44,26 +40,24 @@ async def random_vot_da(ctx):
 
 
 async def cringe(ctx):
-    if random.random() < 0.005 or ctx.clean_content[:5] == 'balab':
-        query = ctx.clean_content
-        if query[:5] == 'balab':
-            query = query[6:]
+    if random.random() >= 0.005 and ctx.clean_content[:5] != 'balab':
+        return
+    query = ctx.clean_content
+    if query[:5] == 'balab':
+        query = query[6:]
 
-        headers = {
-            'Content-Type': 'application/json',
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 11_4) AppleWebKit/605.1.15 '
-                          '(KHTML, like Gecko) Version/14.1.1 Safari/605.1.15',
-            'Origin': 'https://yandex.ru',
-            'Referer': 'https://yandex.ru/',
-        }
-        api_url = 'https://zeapi.yandex.net/lab/api/yalm/text3'
-        payload = {"query": query, "intro": 1, "filter": 1}
-        params = json.dumps(payload).encode('utf8')
-        req = urllib.request.Request(api_url, data=params, headers=headers)
-        response = urllib.request.urlopen(req)
+    api_url = 'https://zeapi.yandex.net/lab/api/yalm/text3'
+    payload = {"query": query, "intro": 1, "filter": 1}
+    params = json.dumps(payload).encode('utf8')
+    headers = {'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 11_4)\
+                AppleWebKit/605.1.15 ' '(KHTML, like Gecko) Version/14.1.1 Safari/605.1.15', 'Origin': 'https://yandex.ru',
+               'Referer': 'https://yandex.ru/', }
 
-        msg = json.loads(response.read())['text']
-        await ctx.channel.send(msg)
+    req = urllib.request.Request(api_url, data=params, headers=headers)
+    response = urllib.request.urlopen(req)
+
+    msg = json.loads(response.read())['text']
+    await ctx.channel.send(msg)
 
 
 async def random_emote(ctx):
@@ -87,19 +81,15 @@ async def message_repeating(ctx):
 
 
 async def reference_reaction(ctx, client):
-    if (not ctx.reference
-            or ctx.reference.resolved.author.id != client.user.id
-            or ctx.author.id == client.user.id):
+    if not ctx.reference or ctx.reference.resolved.author.id != client.user.id or ctx.author.id == client.user.id:
         return
 
     if replies:
-        special_replies = get_special_replies(ctx.author.id)
-        if special_replies:
+        if special_replies := get_special_replies(ctx.author.id):
             special_reply = random.choice(special_replies)
-            if special_reply.startswith("&") or special_reply.startswith("№"):
-                reply = f"{special_reply[1:]}"
-            else:
-                reply = f"{ctx.author.mention}, {special_reply}"
+            reply = f"{special_reply[1:]}" if special_reply.startswith("&") or special_reply.startswith("№")\
+                else f"{ctx.author.mention}, {special_reply}"
+
             await ctx.channel.send(reply)
 
 
@@ -124,7 +114,8 @@ class MiscCog(commands.Cog):
 
     @slash_command(name='start_time')
     async def send_start_time(self, ctx):
-        embed = Embed(title='Bot working since ' + str(start_time.strftime('%b %d %Y %H:%M:%S') + ' UTC+03:00'))
+        embed = Embed(title='Bot working since ' +
+                      str(start_time.strftime('%b %d %Y %H:%M:%S') + ' UTC+03:00'))
         await ctx.send(embed=embed)
 
     @slash_command(name='top')

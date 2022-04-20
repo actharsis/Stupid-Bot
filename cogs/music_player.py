@@ -1,21 +1,22 @@
 import asyncio
-import emoji
+import contextlib
 import math
 import random
-
 from collections import deque
+
+import emoji
 from config import *
 from modules import wavelink
-from modules.wavelink import Track, Node
+from modules.wavelink import Node, Track
 from modules.wavelink.ext import spotify
 from modules.wavelink.utils import MISSING
-from nextcord import Embed, ChannelType, SlashOption, slash_command, \
-    errors, ButtonStyle, SelectOption, Interaction, Client
+from nextcord import (ButtonStyle, ChannelType, Client, Embed, Interaction,
+                      SelectOption, SlashOption, errors, slash_command)
 from nextcord.abc import GuildChannel
 from nextcord.channel import VoiceChannel
 from nextcord.colour import Colour
 from nextcord.ext import commands
-from nextcord.ui import View, Button, Select
+from nextcord.ui import Button, Select, View
 
 if safety:
     from modules.predict import is_nsfw
@@ -30,25 +31,22 @@ def my_shuffle(x, *s):
 
 
 def time_to_str(time):
-    return f"{int(time // 60)} minutes, {int(time % int(60))} seconds"
+    return f"{int(time // 60)} minutes, {int(time % 60)} seconds"
 
 
 def short_time(time):
-    return f"{int(time // 60)}:{int(time % int(60))}"
+    return f"{int(time // 60)}:{int(time % 60)}"
 
 
 def render_bar(cells, time, duration):
     filled = max(1, math.floor(cells * (time / duration)))
     empty = cells - filled
     filled -= 1
-    bar = f"[{('=' * filled)}O{('-' * empty)}]"
-    return bar
+    return f"[{('=' * filled)}O{('-' * empty)}]"
 
 
 def cut_text(text, limit):
-    if len(text) > limit:
-        return f"{text[:limit]}..."
-    return text
+    return f"{text[:limit]}..." if len(text) > limit else text
 
 
 async def get_track(queue):
@@ -110,7 +108,7 @@ def build_queue_embed(player):
     return embed
 
 
-def build_history_embed(player, title: str):
+def build_history_embed(player):
     text = ""
     if not player.history:
         text = "*Empty*"
@@ -124,7 +122,7 @@ def build_history_embed(player, title: str):
             if len(text) > 3000:
                 break
     embed = Embed(description=text)
-    embed.set_author(name=title, icon_url="https://cdn.discordapp.com/emojis/695126168680005662.webp")
+    embed.set_author(name="History:", icon_url="https://cdn.discordapp.com/emojis/695126168680005662.webp")
     return embed
 
 
@@ -145,7 +143,7 @@ def player_embed(player):
                              icon_url='https://cdn.discordapp.com/emojis/751692077779124316.gif')
         url = f'https://img.youtube.com/vi/{track.uri[32:]}/mqdefault.jpg'
         if safety and is_nsfw(url) and not player.message.channel.nsfw:
-            url = f'https://img.youtube.com/vi/nter2axWgoA/mqdefault.jpg'
+            url = 'https://img.youtube.com/vi/nter2axWgoA/mqdefault.jpg'
         embed.set_image(url=url)
     else:
         embed = Embed(description=f"**Nothing**\n"
@@ -193,7 +191,6 @@ class ExtPlayer(wavelink.Player):
         self.message = None
         self.controls = None
         self.ctx = None
-        self.hash = None
 
 
 # class PlayerView(View):
@@ -295,23 +292,22 @@ class PlayerView(View):
                              emoji=emoji.emojize(':play_button:'), row=0))
         self.add_item(Button(custom_id="next", style=ButtonStyle.blurple,
                              emoji=emoji.emojize(':next_track_button:'), row=0))
-        if not volume_lock:
-            if self.player.volume > 0:
-                self.add_item(Button(label="Mute", custom_id="mute",
-                                     emoji=emoji.emojize(':muted_speaker:'), row=1))
-            else:
-                self.add_item(Button(label="Unmute", custom_id="mute",
-                                     emoji=emoji.emojize(':speaker_high_volume:'), row=1))
-        else:
+        if volume_lock:
             self.add_item(Button(label="Mute", custom_id="mute", disabled=True,
                                  emoji=emoji.emojize(':muted_speaker:'), row=1))
+        elif self.player.volume > 0:
+            self.add_item(Button(label="Mute", custom_id="mute",
+                                 emoji=emoji.emojize(':muted_speaker:'), row=1))
+        else:
+            self.add_item(Button(label="Unmute", custom_id="mute",
+                                 emoji=emoji.emojize(':speaker_high_volume:'), row=1))
         self.add_item(Button(label="Loop", custom_id="repeat", emoji=emoji.emojize(':repeat_button:'), row=1))
         self.add_item(Button(label="Log", custom_id="history", emoji=emoji.emojize(':scroll:'), row=1))
         self.add_item(Button(label="Quit", custom_id="stop", style=ButtonStyle.red,
                              emoji=emoji.emojize(':black_large_square:'), row=1))
 
         options = []
-        for i, item in enumerate(self.player.queue):
+        for item in self.player.queue:
             if isinstance(item, wavelink.tracks.YouTubePlaylist):
                 j = 0
                 while j + item.selected_track < len(item.tracks) and len(options) < 10:
@@ -336,7 +332,7 @@ class PlayerView(View):
                 options.append(SelectOption(label=word, value=num, emoji=emoji.emojize(f':keycap_{num}:')))
             if len(options) == 10:
                 break
-        if len(options) > 0:
+        if options:
             self.add_item(Select(placeholder="Queue", options=options, custom_id="queue_list", row=2))
 
     async def interaction_check(self, interaction: Interaction) -> bool:
@@ -385,7 +381,7 @@ class PlayerView(View):
             self.player.queue.clear()
             await self.player.stop()
         elif custom_id == 'history':
-            await interaction.response.send_message(embed=build_history_embed(self.player, "History:"), ephemeral=True)
+            await interaction.response.send_message(embed=build_history_embed(self.player), ephemeral=True)
             return True
         elif custom_id == 'queue_list':
             value = interaction.data['values'][0]
@@ -433,28 +429,21 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
 
     @commands.Cog.listener()
     async def on_wavelink_node_ready(self, node: Node):
-        print(f"Connected to lavalink!")
+        print("Connected to lavalink!")
 
     @commands.Cog.listener()
     async def on_wavelink_track_start(self, player: ExtPlayer, track: Track):
-        player.hash = random.random()
         if player.message is None:
             await self.player_message(player)
 
     async def soft_destroy(self, player):
-        h = player.hash
         await asyncio.sleep(10)
-        if h != player.hash:
-            return
         if not player.is_playing():
-            try:
+            with contextlib.suppress(Exception):
                 await player.disconnect()
                 await player.message.delete()
-                await player.ctx.send(embed=build_history_embed(player, "Songs played during the session:"))
-                if player.guild.id in self.players and self.players[player.guild.id] == player:
-                    self.players.pop(player.guild.id)
-            except:
-                pass
+            if player.guild.id in self.players and self.players[player.guild.id] == player:
+                self.players.pop(player.guild.id)
 
     @commands.Cog.listener()
     async def on_wavelink_track_end(self, player: ExtPlayer, track: Track, reason):
@@ -484,12 +473,11 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
             if vc is None:
                 if server_id not in self.players:
                     self.players[server_id] = await ctx.user.voice.channel.connect(cls=ExtPlayer)
+            elif server_id in self.players:
+                await self.players[server_id].move_to(vc)
             else:
-                if server_id not in self.players:
-                    self.players[server_id] = await vc.connect(cls=ExtPlayer)
-                else:
-                    await self.players[server_id].move_to(vc)
-        except:
+                self.players[server_id] = await vc.connect(cls=ExtPlayer)
+        except Exception:
             await ctx.send(embed=Embed(title="Which voice channel?", color=Colour.green()), delete_after=10.0)
             return 0
         if self.players[server_id].ctx is None:
@@ -509,7 +497,7 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
         try:
             playlist = spotify.SpotifyTrack.iterator(query=url)
             await playlist.fill_queue()
-        except:
+        except Exception:
             await ctx.send(embed=Embed(title="Nothing found :(", color=Colour.green()),
                            delete_after=10.0)
             return
@@ -537,7 +525,7 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
         queue = player.queue
         try:
             track = await wavelink.YouTubeTrack.search(query=track, return_first=True)
-        except:
+        except Exception:
             await ctx.send(embed=Embed(title="Nothing found :(", color=Colour.green()),
                            delete_after=10.0)
             return
@@ -569,7 +557,7 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
         try:
             playlist = await wavelink.YouTubePlaylist.search(query=url)
             playlist.selected_track = max(0, offset)
-        except:
+        except Exception:
             await ctx.send(embed=Embed(title="Nothing found :(", color=Colour.green()), delete_after=10.0)
             return
         queue.append(playlist)
@@ -589,9 +577,9 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
         await ctx.response.defer()
         server_id = ctx.guild.id
         if server_id not in self.players:
-            await ctx.send(embed=Embed(title=f"Nothing is playing", color=Colour.red()), delete_after=5)
+            await ctx.send(embed=Embed(title="Nothing is playing", color=Colour.red()), delete_after=5)
         else:
-            await ctx.send(embed=Embed(title=f"Player respawned", color=Colour.green()), delete_after=5)
+            await ctx.send(embed=Embed(title="Player respawned", color=Colour.green()), delete_after=5)
             player = self.players[server_id]
             player.ctx = ctx.channel
             await player.message.delete()
@@ -609,7 +597,7 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
                 elif isinstance(item, spotify.SpotifyAsyncIterator):
                     random.shuffle(item.tracks)
             random.shuffle(player.queue)
-        await ctx.send(embed=Embed(title=f"Done", color=Colour.green()), delete_after=5)
+        await ctx.send(embed=Embed(title="Done", color=Colour.green()), delete_after=5)
 
     @slash_command(name='move', description='Move to specified voice channel (default=<user voice channel>)')
     async def move(self, ctx,
@@ -623,11 +611,11 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
                     await player.move_to(ctx.author.voice.channel)
                 else:
                     await player.move_to(vc)
-                embed = Embed(title=f"Ok", color=Colour.green())
-            except:
-                embed = Embed(title=f"Can't move in this channel", color=Colour.red())
+                embed = Embed(title="Ok", color=Colour.green())
+            except Exception:
+                embed = Embed(title="Can't move in this channel", color=Colour.red())
         else:
-            embed = Embed(title=f"Player not initialized", color=Colour.red())
+            embed = Embed(title="Player not initialized", color=Colour.red())
         await ctx.send(embed=embed, delete_after=5.0)
 
     @slash_command(name='pop', description='Delete specific song/playlist from queue by index')
@@ -639,7 +627,7 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
             if idx >= 0 or idx < len(queue):
                 item = queue[idx]
                 del queue[idx]
-                if isinstance(item, wavelink.tracks.YouTubePlaylist) or isinstance(item, spotify.SpotifyAsyncIterator):
+                if isinstance(item, (wavelink.tracks.YouTubePlaylist, spotify.SpotifyAsyncIterator)):
                     embed = Embed(title=f"Playlist: '**{item.name}**' was deleted", color=Colour.blurple())
                 else:
                     embed = Embed(title=f"Song: '**{item.title}**' was deleted", color=Colour.blurple())
@@ -706,12 +694,11 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
     async def history(self, ctx):
         server_id = ctx.guild.id
         if server_id in self.players:
-            await ctx.response.send_message(embed=build_history_embed(self.players[server_id],
-                                                                      "History:"),
+            await ctx.response.send_message(embed=build_history_embed(self.players[server_id]),
                                             delete_after=60.0, ephemeral=True)
         else:
             await ctx.response.send_message(Embed(title="Player not initialized", color=Colour.red()),
-                           delete_after=5.0, ephemeral=True)
+                                            delete_after=5.0, ephemeral=True)
 
     @slash_command(name='seek', description='Move timeline to specific time in seconds')
     async def seek(self, ctx, time: int = SlashOption(description="Time to seek in seconds", required=True)):
@@ -761,26 +748,18 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
         channel = self.bot.get_channel(payload.channel_id)
         try:
             message = await channel.fetch_message(payload.message_id)
-        except:
+        except Exception:
             return
 
         user = self.bot.get_user(payload.user_id)
         if server_id not in self.players or self.players[server_id].message.id != message.id:
-            try:
-                text = message.embeds[0].description
-                if 'Length' in text and 'Volume' in text and 'Timeline' in text:
-                    await message.delete()
-            except:
-                pass
             return
         if payload.user_id != self.bot.user.id:
             await message.add_reaction(emoji.emojize(':angry_face:'))
         else:
             await asyncio.sleep(2)
-            try:
+            with contextlib.suppress(errors.NotFound):
                 await message.remove_reaction(payload.emoji, user)
-            except errors.NotFound:
-                pass
 
 
 def setup(bot):

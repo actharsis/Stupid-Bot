@@ -1,6 +1,7 @@
+import contextlib
 import json
-import nextcord
 
+import nextcord
 from nextcord import Embed, SlashOption, slash_command
 from nextcord.colour import Colour
 from nextcord.ext import commands
@@ -22,7 +23,7 @@ def mimic(ctx, text):
         mention = member.mention
         if mention[2] == '!':
             mention = mention[:2] + mention[3:]
-        if call == mention or call == str(member.id):
+        if call in [mention, str(member.id)]:
             user = member
             resend = True
             text = text[len(pref) + len(call) + 2:]
@@ -67,7 +68,7 @@ class EmotesCog(commands.Cog, name="Emotes"):
 
     async def act(self, ctx, member: nextcord.Member, *, message=None):
         if message is None:
-            await ctx.send(f'No message provided', delete_after=10.0)
+            await ctx.send('No message provided', delete_after=10.0)
             return
         name = member.nick
         if name is None:
@@ -88,13 +89,11 @@ class EmotesCog(commands.Cog, name="Emotes"):
                 file.write(json.dumps(self.reactions))
 
     def load(self):
-        try:
+        with contextlib.suppress(Exception):
             with open('json/emoji_users.json', 'r') as file:
                 self.sub_users = set(json.load(file))
             with open('json/emoji_list.json', 'r') as file:
                 self.reactions = json.load(file)
-        except:
-            pass
 
     @commands.Cog.listener()
     async def on_ready(self):

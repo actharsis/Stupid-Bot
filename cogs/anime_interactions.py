@@ -1,11 +1,11 @@
-import aiohttp
 import io
+import urllib.parse
+
+import aiohttp
 import emoji
 import interactions
 import requests
-import urllib.parse
-
-from interactions import Extension, Embed, EmbedField, File
+from interactions import Embed, EmbedField, Extension, File
 
 
 def anilist(idx):

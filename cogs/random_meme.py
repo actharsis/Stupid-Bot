@@ -1,8 +1,9 @@
+import asyncio
+import contextlib
+import random
+
 import nextcord
 from modules import wavelink
-import random
-import asyncio
-
 from nextcord.ext import commands
 
 
@@ -33,7 +34,7 @@ class RandomMeme(commands.Cog):
     async def on_ready(self):
         while True:
             await asyncio.sleep(300)
-            try:
+            with contextlib.suppress(Exception):
                 for guild in self.bot.guilds:
                     start = random.randrange(4)
                     if start == 0:
@@ -49,11 +50,10 @@ class RandomMeme(commands.Cog):
                                     best_channel = c
                         if best_channel is not None:
                             await play_stuff(best_channel)
-            except:
-                pass
 
     @commands.Cog.listener()
-    async def on_wavelink_track_end(self, player: wavelink.player, track: wavelink.Track, reason):
+    async def on_wavelink_track_end(
+            self, player: wavelink.player, track: wavelink.Track, reason):
         await player.disconnect()
 
 
