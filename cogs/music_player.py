@@ -108,7 +108,7 @@ def build_queue_embed(player):
     return embed
 
 
-def build_history_embed(player):
+def build_history_embed(player, title: str):
     text = ""
     if not player.history:
         text = "*Empty*"
@@ -122,7 +122,7 @@ def build_history_embed(player):
             if len(text) > 3000:
                 break
     embed = Embed(description=text)
-    embed.set_author(name="History:", icon_url="https://cdn.discordapp.com/emojis/695126168680005662.webp")
+    embed.set_author(name=title, icon_url="https://cdn.discordapp.com/emojis/695126168680005662.webp")
     return embed
 
 
@@ -191,6 +191,7 @@ class ExtPlayer(wavelink.Player):
         self.message = None
         self.controls = None
         self.ctx = None
+        self.hash = None
 
 
 # class PlayerView(View):
@@ -381,7 +382,9 @@ class PlayerView(View):
             self.player.queue.clear()
             await self.player.stop()
         elif custom_id == 'history':
-            await interaction.response.send_message(embed=build_history_embed(self.player), ephemeral=True)
+            await interaction.response.send_message(
+                embed=build_history_embed(self.player, "History:"), ephemeral=True
+            )
             return True
         elif custom_id == 'queue_list':
             value = interaction.data['values'][0]
@@ -433,17 +436,22 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
 
     @commands.Cog.listener()
     async def on_wavelink_track_start(self, player: ExtPlayer, track: Track):
+        player.hash = random.random()
         if player.message is None:
             await self.player_message(player)
 
     async def soft_destroy(self, player):
+        h = player.hash
         await asyncio.sleep(10)
+        if h != player.hash:
+            return
         if not player.is_playing():
             with contextlib.suppress(Exception):
                 await player.disconnect()
                 await player.message.delete()
-            if player.guild.id in self.players and self.players[player.guild.id] == player:
-                self.players.pop(player.guild.id)
+                await player.ctx.send(embed=build_history_embed(player, "Songs played during the session:"))
+                if player.guild.id in self.players and self.players[player.guild.id] == player:
+                    self.players.pop(player.guild.id)
 
     @commands.Cog.listener()
     async def on_wavelink_track_end(self, player: ExtPlayer, track: Track, reason):
@@ -694,7 +702,7 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
     async def history(self, ctx):
         server_id = ctx.guild.id
         if server_id in self.players:
-            await ctx.response.send_message(embed=build_history_embed(self.players[server_id]),
+            await ctx.response.send_message(embed=build_history_embed(self.players[server_id], "History:"),
                                             delete_after=60.0, ephemeral=True)
         else:
             await ctx.response.send_message(Embed(title="Player not initialized", color=Colour.red()),
@@ -753,6 +761,10 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
 
         user = self.bot.get_user(payload.user_id)
         if server_id not in self.players or self.players[server_id].message.id != message.id:
+            with contextlib.suppress(Exception):
+                text = message.embeds[0].description
+                if 'Length' in text and 'Volume' in text and 'Timeline' in text:
+                    await message.delete()
             return
         if payload.user_id != self.bot.user.id:
             await message.add_reaction(emoji.emojize(':angry_face:'))
