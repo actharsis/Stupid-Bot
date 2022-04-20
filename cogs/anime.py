@@ -57,6 +57,43 @@ def get_url(message):
     return url
 
 
+async def find_best_trace(url):
+    trace = requests.get(f"https://api.trace.moe/search?cutBorders&url={urllib.parse.quote_plus(url)}") \
+        .json()['result'][0]
+    try:
+        tr_sim = int(trace['similarity'] * 100)
+    except KeyError:
+        tr_sim = 0
+    response = requests.get(url)
+    with io.BytesIO(response.content) as img_bytes:
+        image = Image.open(img_bytes)
+        if image.width < image.height:
+            tr_sim = 0
+    if tr_sim < 88:
+        tr_sim = 0
+    return trace, tr_sim
+
+
+async def find_best_sauce(url):
+    sauce = None
+    characters = None
+    try:
+        sauce = await AIOSauceNao(saucenao_token).from_url(url)
+        best = None
+        for i, item in enumerate(sauce.results):
+            if sauce.results[0].similarity - item.similarity < 4 and item.index_id == 5 and best is None:
+                best = i
+            if 'characters' in item.raw['data']:
+                characters = item.raw['data']['characters']
+        if best is None:
+            best = 0
+        sauce = sauce.results[best]
+        snao_sim = sauce.similarity
+    except Exception:
+        snao_sim = 0
+    return sauce, snao_sim, characters
+
+
 async def send_trace_moe(message, trace, characters=None):
     info = anilist(trace['anilist'])
     title = info['data']['Media']['title']['english']
@@ -136,43 +173,21 @@ class AnimeCog(commands.Cog, name="Anime Search Engine"):
         if not message.author.bot and message.author.id == payload.user_id and demojized == ":red_question_mark:":
             url = get_url(message)
             if url is not None:
-                trace = requests.get(f"https://api.trace.moe/search?cutBorders&url={urllib.parse.quote_plus(url)}")\
-                    .json()['result'][0]
+                await channel.trigger_typing()
 
-                try:
-                    tr_sim = int(trace['similarity'] * 100)
-                except KeyError:
-                    tr_sim = 0
-                response = requests.get(url)
-                with io.BytesIO(response.content) as img_bytes:
-                    image = Image.open(img_bytes)
-                    if image.width < image.height:
-                        tr_sim = 0
-                if tr_sim < 88:
-                    tr_sim = 0
-
-                sauce = None
-                characters = None
-                try:
-                    sauce = await AIOSauceNao(saucenao_token).from_url(url)
-                    best = None
-                    for i, item in enumerate(sauce.results):
-                        if sauce.results[0].similarity - item.similarity < 4 and item.index_id == 5 and best is None:
-                            best = i
-                        if 'characters' in item.raw['data'] and characters is None:
-                            characters = item.raw['data']['characters']
-                    if best is None:
-                        best = 0
-                    sauce = sauce.results[best]
-                    snao_sim = sauce.similarity
-                except Exception:
-                    snao_sim = 0
+                trace, tr_sim = await find_best_trace(url)
+                sauce, snao_sim, characters = await find_best_sauce(url)
 
                 if max(tr_sim, snao_sim) < 55:
                     await message.reply(embed=Embed(title='idk :('), delete_after=5)
                     return
 
-                await channel.trigger_typing()
+                if snao_sim > 0 and sauce.index_id == 21 or sauce.index_id == 22:
+                    url = sauce.thumbnail
+                    trace, tr_sim = await find_best_trace(url)
+                    if tr_sim >= 88:
+                        await send_trace_moe(message, trace, characters)
+                        return
                 if tr_sim - snao_sim > -2:
                     await send_trace_moe(message, trace, characters)
                 else:
