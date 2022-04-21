@@ -754,7 +754,7 @@ class PixivCog(commands.Cog, name="Pixiv"):
                 if channel is None:
                     continue
                 api = self.get_api(channel.guild.id)
-                if api in None:
+                if api is None:
                     bad_channels.append(channel)
                     continue
                 refresh_time = options['refresh_time']
