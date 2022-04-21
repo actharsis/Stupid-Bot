@@ -748,11 +748,15 @@ class PixivCog(commands.Cog, name="Pixiv"):
 
     async def auto_draw(self):
         with contextlib.suppress(RuntimeError):
+            bad_channels = []
             for channel_id, options in self.channels.items():
                 channel = self.bot.get_channel(int(channel_id))
                 if channel is None:
                     continue
                 api = self.get_api(channel.guild.id)
+                if api in None:
+                    bad_channels.append(channel)
+                    continue
                 refresh_time = options['refresh_time']
                 limit = options['limit']
                 timestamp = time.time()
@@ -761,6 +765,10 @@ class PixivCog(commands.Cog, name="Pixiv"):
                     query = await api.illust_recommended()
                     await self.show_page(api, query, channel, limit=limit)
                     self.save(timers=True)
+            for channel in bad_channels:
+                self.channels.pop(channel)
+            if bad_channels:
+                self.save(channels=True)
 
     async def auto_refresh_tokens(self):
         timestamp = time.time()
