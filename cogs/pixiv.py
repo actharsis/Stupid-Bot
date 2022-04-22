@@ -752,10 +752,11 @@ class PixivCog(commands.Cog, name="Pixiv"):
             for channel_id, options in self.channels.items():
                 channel = self.bot.get_channel(int(channel_id))
                 if channel is None:
+                    bad_channels.append(channel_id)
                     continue
                 api = self.get_api(channel.guild.id)
                 if api is None:
-                    bad_channels.append(channel)
+                    bad_channels.append(channel_id)
                     continue
                 refresh_time = options['refresh_time']
                 limit = options['limit']
@@ -765,8 +766,8 @@ class PixivCog(commands.Cog, name="Pixiv"):
                     query = await api.illust_recommended()
                     await self.show_page(api, query, channel, limit=limit)
                     self.save(timers=True)
-            for channel in bad_channels:
-                self.channels.pop(channel)
+            for channel_id in bad_channels:
+                self.channels.pop(channel_id)
             if bad_channels:
                 self.save(channels=True)
 
