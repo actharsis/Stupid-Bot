@@ -1,10 +1,11 @@
 import json
 import random
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timezone
 
 from nextcord import Embed, slash_command
 from nextcord.ext import commands
+import git
 import pymongo
 import constants
 from config import DB_ADDRESS, DB_NAME
@@ -13,6 +14,7 @@ from modules.message_analysis import AnalysisModule
 
 start_time = datetime.now()
 start_time.isoformat(sep='T')
+
 history = {}
 
 very_clever_quotes = None
@@ -113,10 +115,19 @@ class MiscCog(commands.Cog):
         await self.client.process_commands(ctx)
         self.analyzer.save_message(ctx)
 
-    @slash_command(name='start_time')
+    @slash_command(name='info')
     async def send_start_time(self, ctx):
-        embed = Embed(title='Bot working since ' +
-                      str(start_time.strftime('%b %d %Y %H:%M:%S') + ' UTC+03:00'))
+        repo = git.Repo(search_parent_directories=True)
+        sha = repo.head.object.hexsha
+        committed_date = repo.head.object.committed_date
+        now = datetime.now()
+        local_now = now.astimezone()
+        local_tz = local_now.tzinfo
+        local_tzname = local_tz.tzname(local_now)
+        embed = Embed(title='info', description='Bot working since ' +
+                      str(start_time.strftime('%b %d %Y %H:%M:%S') + ' ' + local_tzname + '\n \
+                          Last commit: ' + sha +'\n \
+                          Commit\'s date: ' + str(datetime.fromtimestamp(committed_date, timezone.utc))))
         await ctx.send(embed=embed)
 
     @slash_command(name='top')
