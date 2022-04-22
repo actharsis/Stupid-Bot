@@ -20,26 +20,25 @@ class AnalysisModule:
         self.voice_activity_collection.update_many(
             {"session_ended": False}, {"$set": {"session_ended": True}})
 
-    # do after forming collection structure
     async def get_voice_activity(self, ctx):
         try:
             df = pd.DataFrame(list(self.voice_activity_collection.find(
                 {"guild_id": ctx.guild.id},
                 ["user_id", "activity_minutes"])))
+            df = df.groupby(["user_id"]).sum().sort_values(
+                "activity_minutes", ascending=False).head(10)
             df = df.sort_values("activity_minutes", ascending=False).head(10)
             df = df.reset_index()
             answer = "```"
             for item in df.itertuples():
                 user = await self.discord_client.fetch_user(item.user_id)
-                answer += f"#{str(item.Index + 1)} {user} - \
-                {time_to_str(item.activity_minutes)}\n"
+                answer += f"#{str(item.Index + 1)} {user} - {time_to_str(item.activity_minutes)}\n"
             answer += "```"
             embed = Embed(title="Voice activity", description=answer)
         except KeyError:
             embed = Embed(title="Voice activity", description="Empty.")
         await ctx.send(embed=embed, ephemeral=True)
 
-    # make adding new users to active list
     async def voice_activity_check(self):
         while True:
             active_users = self.get_active_voice_users()
