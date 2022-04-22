@@ -9,7 +9,8 @@ from io import BytesIO
 import emoji
 import modules.date as date
 import requests
-from config import PIXIV_SHOW_EMBED_ILLUST, SAFETY, USE_SELENIUM
+from collections import deque
+from config import PIXIV_SHOW_EMBED_ILLUST, PIXIV_HISTORY_SIZE, SAFETY, USE_SELENIUM
 from modules.pixiv_auth import refresh_token, selenium_login
 from nextcord import (Embed, File, Interaction, SlashOption, TextInputStyle,
                       slash_command, ui)
@@ -141,6 +142,25 @@ def good_image(illust, minimum_views, minimum_rate, max_sanity):
         and max_sanity >= illust.sanity_level
 
 
+async def send(illust, channel, file, filename, color, show_title):
+    if show_title:
+        title = illust.title
+        if PIXIV_SHOW_EMBED_ILLUST:
+            embed = Embed(description=f'Title: [{title}](https://www.pixiv.net/en/artworks/{illust.id})',
+                          color=color)
+            embed.set_image(url=f'attachment://{filename}')
+            message = await channel.send(embed=embed, file=file)
+        else:
+            text = f'Title: {title}'
+            if len(illust.meta_pages) > 0:
+                text += f', {len(illust.meta_pages)} images'
+            message = await channel.send(text, file=file)
+    else:
+        message = await channel.send(file=file)
+    if illust.is_bookmarked:
+        await message.add_reaction(emoji.emojize(':red_heart:'))
+
+
 class PixivCog(commands.Cog, name="Pixiv"):
     """
     **Pixiv cog** - interaction with pixiv. Allows you to search
@@ -199,6 +219,7 @@ class PixivCog(commands.Cog, name="Pixiv"):
         self.fetched = {}
         self.queues = asyncio.Queue(0)
         self.queues.put_nowait(0)
+        self.history = {}
         self.bot.loop.create_task(self.load())
         self.delay = 1
 
@@ -233,7 +254,7 @@ class PixivCog(commands.Cog, name="Pixiv"):
         await asyncio.sleep(req_time - time.time())
         return await api.download(url)
 
-    async def send_illust(self, api, illust, url, channel, num=None, show_title=False, color=None):
+    async def get_file(self, api, url, channel, illust, num):
         img = await self.waited_download(api, url)
         img_type = url.split('.')[-1]
         filename = f'{str(illust.id)}.{img_type}'
@@ -250,22 +271,12 @@ class PixivCog(commands.Cog, name="Pixiv"):
                 'https://img.youtube.com/vi/nter2axWgoA/mqdefault.jpg')
             with BytesIO(response.content) as image_binary:
                 file = File(fp=image_binary, filename=filename)
-        if show_title:
-            title = illust.title
-            if PIXIV_SHOW_EMBED_ILLUST:
-                embed = Embed(description=f'Title: [{title}](https://www.pixiv.net/en/artworks/{illust.id})',
-                              color=color)
-                embed.set_image(url=f'attachment://{filename}')
-                message = await channel.send(embed=embed, file=file)
-            else:
-                text = f'Title: {title}'
-                if len(illust.meta_pages) > 0:
-                    text += f', {len(illust.meta_pages)} images'
-                message = await channel.send(text, file=file)
-        else:
-            message = await channel.send(file=file)
-        if illust.is_bookmarked:
-            await message.add_reaction(emoji.emojize(':red_heart:'))
+        return file, filename
+
+    async def send_illust(self, api, illust, url, channel, num=None,
+                          show_title=False, color=None):
+        file, filename = await self.get_file(api, url, channel, illust, num)
+        await send(illust, channel, file, filename, color, show_title)
 
     async def show_illust(self, api, illust_id, channel):
         try:
@@ -283,22 +294,37 @@ class PixivCog(commands.Cog, name="Pixiv"):
             return True
         except Exception:
             await channel.send(embed=Embed(title='Fail', color=Colour.red()), delete_after=5.0)
-
             return None
 
-    async def show_page(self, api, query, chat, limit=30,
+    def history_repeating(self, illust, channel):
+        if channel.guild.id not in self.history:
+            self.history[channel.guild.id] = [set(), deque()]
+        elements = self.history[channel.guild.id][0]
+        queue = self.history[channel.guild.id][1]
+        if illust.id in elements:
+            return True
+        elements.add(illust.id)
+        queue.append(illust.id)
+        if len(queue) > PIXIV_HISTORY_SIZE:
+            idx = queue.popleft()
+            elements.remove(idx)
+        return False
+
+    async def show_page(self, api, query, channel, limit=30, use_history=True,
                         minimum_views=None, minimum_rate=None, max_sanity=6, dry_run=False):
-        if chat is None or query is None or query.illusts is None or len(query.illusts) == 0:
+        if channel is None or query is None or query.illusts is None or len(query.illusts) == 0:
             return 0, 0, False
         shown = 0
         # print('fetched', len(query.illusts), 'images')
         color = Colour.random()
         for illust in query.illusts:
-            if not good_image(illust, minimum_views, minimum_rate, max_sanity):
+            if not good_image(illust, minimum_views, minimum_rate, max_sanity) or \
+               use_history and not dry_run and self.history_repeating(illust, channel):
                 continue
             if not dry_run:
                 self.bot.loop.create_task(self.send_illust(api, illust, illust.image_urls.large,
-                                                           chat, show_title=True, color=color))
+                                                           channel, show_title=True, color=color))
+
             shown += 1
             if shown == limit:
                 break
@@ -347,7 +373,7 @@ class PixivCog(commands.Cog, name="Pixiv"):
         await ctx.response.defer()
         server = str(ctx.guild.id)
         try:
-            self.api[self.tokens[server]['value']].trending_tags_illust()
+            await self.api[self.tokens[server]['value']].trending_tags_illust()
             embed = Embed(
                 title="You logged in and API is working fine", color=Colour.green())
         except Exception:
@@ -534,8 +560,9 @@ class PixivCog(commands.Cog, name="Pixiv"):
                 selected_date = date.next_year(selected_date)
                 offset = 0
             else:
-                good, total, alive = await self.show_page(api, query, ctx.channel, limit - shown,
-                                                          views, rate, max_sanity_level, dry_run=True)
+                good, total, alive = await self.show_page(api, query, ctx.channel, limit - shown, use_history=False,
+                                                          minimum_views=views, minimum_rate=rate,
+                                                          max_sanity=max_sanity_level, dry_run=True)
                 shown += good
                 self.fetched[rv] += total
                 if alive:
@@ -549,8 +576,9 @@ class PixivCog(commands.Cog, name="Pixiv"):
                                     offset=offset, shown=shown, rv=rv, lvl=lvl+1)
             )
             self.bot.loop.create_task(
-                self.show_page(api, query, ctx.channel, limit -
-                               shown, views, rate, max_sanity_level)
+                self.show_page(api, query, ctx.channel, limit - shown,
+                               use_history=False, minimum_views=views,
+                               minimum_rate=rate, max_sanity=max_sanity_level)
             )
         else:
             embed = Embed(title=f"Find with word {word} called",
