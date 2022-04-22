@@ -154,7 +154,7 @@ def player_embed(player):
                       color=Colour.blurple())
         embed.set_author(name='Stopped.',
                          icon_url='https://cdn.discordapp.com/emojis/884559976016805888.webp')
-        embed.set_image(url='https://media.discordapp.net/attachments/959918146238689364/964988238852935770/cirno.gif')
+        embed.set_image(url='https://s10.gifyu.com/images/cirno.gif')
     return embed
 
 
@@ -173,7 +173,8 @@ async def message_auto_update(player):
                 embed=player_embed(player),
                 view=view
             )
-        except AttributeError:
+        except (errors.NotFound, AttributeError):
+            player.message = None
             return
         await asyncio.sleep(1)
 
@@ -590,7 +591,8 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
             await ctx.send(embed=Embed(title="Player respawned", color=Colour.green()), delete_after=5)
             player = self.players[server_id]
             player.ctx = ctx.channel
-            await player.message.delete()
+            with contextlib.suppress(errors.NotFound, AttributeError):
+                await player.message.delete()
             player.message = None
             await self.player_message(player)
 
