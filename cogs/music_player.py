@@ -477,6 +477,12 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
         self.bot.loop.create_task(message_auto_update(player))
 
     async def update_server_player(self, ctx, vc):
+        if not self.connected:
+            await ctx.send(embed=Embed(title="No lavalink connection, trying to reconnect\n"
+                                             "Please, retry in a few seconds", color=Colour.gold()),
+                           delete_after=10.0)
+            await (wavelink.NodePool.get_node())._connect()
+            return 0
         server_id = ctx.guild.id
         try:
             if vc is None:
@@ -507,7 +513,7 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
             playlist = spotify.SpotifyTrack.iterator(query=url)
             await playlist.fill_queue()
         except Exception:
-            await ctx.send(embed=Embed(title="Nothing found :(", color=Colour.green()),
+            await ctx.send(embed=Embed(title="Nothing found :(", color=Colour.dark_red()),
                            delete_after=10.0)
             return
         queue.append(playlist)
@@ -535,7 +541,7 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
         try:
             track = await wavelink.YouTubeTrack.search(query=track, return_first=True)
         except Exception:
-            await ctx.send(embed=Embed(title="Nothing found :(", color=Colour.green()),
+            await ctx.send(embed=Embed(title="Nothing found :(", color=Colour.dark_red()),
                            delete_after=10.0)
             return
         queue.append(track)
@@ -567,7 +573,8 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
             playlist = await wavelink.YouTubePlaylist.search(query=url)
             playlist.selected_track = max(0, offset)
         except Exception:
-            await ctx.send(embed=Embed(title="Nothing found :(", color=Colour.green()), delete_after=10.0)
+            await ctx.send(embed=Embed(title="Nothing found :(", color=Colour.dark_red()),
+                           delete_after=10.0)
             return
         queue.append(playlist)
         if player.is_playing():
