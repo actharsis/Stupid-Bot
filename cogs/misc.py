@@ -128,7 +128,7 @@ class MiscCog(commands.Cog):
                       str(start_time.strftime('%b %d %Y %H:%M:%S') + ' ' + local_tzname + '\n \
                           Last commit: ' + sha +'\n \
                           Commit\'s date: ' + str(datetime.fromtimestamp(committed_date, timezone.utc))))
-        await ctx.send(embed=embed)
+        await ctx.send(embed=embed, ephemeral=True)
 
     @slash_command(name='top')
     async def send_top(self, ctx):
