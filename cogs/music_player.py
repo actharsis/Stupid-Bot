@@ -477,7 +477,7 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
         self.bot.loop.create_task(message_auto_update(player))
 
     async def update_server_player(self, ctx, vc):
-        if not self.connected:
+        if not wavelink.NodePool.get_node().is_connected():
             await ctx.send(embed=Embed(title="No lavalink connection, trying to reconnect\n"
                                              "Please, retry in a few seconds", color=Colour.gold()),
                            delete_after=10.0)
