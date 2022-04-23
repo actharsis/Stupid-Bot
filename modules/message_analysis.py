@@ -97,7 +97,7 @@ class AnalysisModule:
     async def get_user_scores(self, ctx):
         try:
             df = pd.DataFrame(list(self.messages_collection.find(
-                {"guild_id": ctx.guild.id},
+                {"guild_id": ctx.guild.id, "is_bot": False},
                 ["author_id", "content", "attachments_number"])))
             df["length"] = df["content"].apply(lambda x: len(x))
             df["score"] = df["length"] * 0.1 + df["attachments_number"] * 5
@@ -106,9 +106,7 @@ class AnalysisModule:
             df = df.reset_index()
             answer = "```"
             for item in df.itertuples():
-                answer += f"#{str(item.Index + 1)} \
-                {await self.discord_client.fetch_user(item.author_id)} - \
-                {int(item.score)}\n"
+                answer += f"#{str(item.Index + 1)} {await self.discord_client.fetch_user(item.author_id)} - {int(item.score)}\n"
 
             answer += "```"
             embed = Embed(title="Top", description=answer)
