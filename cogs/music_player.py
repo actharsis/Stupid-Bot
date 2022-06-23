@@ -1,33 +1,47 @@
 import asyncio
 import contextlib
-import math
-import random
-from collections import deque
+import re
 
 import emoji
+import io
+import math
+import pickle
+import random
+import string
+
 from config import *
+from collections import deque
+from cryptography.fernet import Fernet
 from modules import wavelink
 from modules.wavelink import Node, Track
 from modules.wavelink.ext import spotify
 from modules.wavelink.utils import MISSING
-from nextcord import (ButtonStyle, ChannelType, Client, Embed, Interaction,
+from nextcord import (ButtonStyle, ChannelType, Client, Embed, Interaction, File,
                       SelectOption, SlashOption, errors, slash_command)
 from nextcord.abc import GuildChannel
 from nextcord.channel import VoiceChannel
 from nextcord.colour import Colour
 from nextcord.ext import commands
 from nextcord.ui import Button, Select, View
+from os.path import exists
+from urllib.request import Request, urlopen
+from youtube_transcript_api import YouTubeTranscriptApi
 
 if SAFETY:
     from modules.predict import is_nsfw
 
 
-async def anext(ait):
-    return await ait.__anext__()
+async def anext(ait, parse=True):
+    if parse:
+        return await ait.__anext__()
+    else:
+        await ait.__skipanext__()
+        return None
 
 
-def my_shuffle(x, *s):
-    x[slice(*s)] = random.sample(x[slice(*s)], len(x[slice(*s)]))
+def my_shuffle(x, s):
+    x[s:] = random.sample(x[s:], len(x[s:]))
+    print(x)
 
 
 def time_to_str(time):
@@ -35,7 +49,7 @@ def time_to_str(time):
 
 
 def short_time(time):
-    return f"{int(time // 60)}:{int(time % 60)}"
+    return f"{int(time // 60):02d}:{int(time % 60):02d}"
 
 
 def render_bar(cells, time, duration):
@@ -49,7 +63,7 @@ def cut_text(text, limit):
     return f"{text[:limit]}..." if len(text) > limit else text
 
 
-async def get_track(queue):
+async def get_track(queue, parse=True):
     while queue:
         if isinstance(queue[0], wavelink.tracks.YouTubePlaylist):
             playlist = queue[0]
@@ -63,7 +77,7 @@ async def get_track(queue):
         elif isinstance(queue[0], spotify.SpotifyAsyncIterator):
             try:
                 playlist = queue[0]
-                track = await anext(playlist)
+                track = await anext(playlist, parse)
             except StopAsyncIteration:
                 queue.popleft()
                 continue
@@ -162,6 +176,8 @@ async def play_next(player: wavelink.player):
     if player.queue:
         track = await get_track(player.queue)
         await player.play(track)
+    if player.lyrics_message is not None:
+        load_lyrics(player)
 
 
 async def message_auto_update(player):
@@ -192,7 +208,187 @@ class ExtPlayer(wavelink.Player):
         self.message = None
         self.controls = None
         self.ctx = None
+        self.lyrics_message = None
+        self.lyrics_lang = None
         self.hash = None
+
+
+def serialize_music(player: ExtPlayer):
+    if not exists('secret.key'):
+        key = Fernet.generate_key()
+        with open("secret.key", "wb") as key_file:
+            key_file.write(key)
+    key = open("secret.key", "rb").read()
+    dump = pickle.dumps({'queue': player.queue, 'history': player.history, 'track': player.track})
+    f = Fernet(key)
+    encrypted = f.encrypt(dump)
+    return encrypted
+
+
+def deserialize_music(data: bytes):
+    if not exists('secret.key'):
+        key = Fernet.generate_key()
+        with open("secret.key", "wb") as key_file:
+            key_file.write(key)
+    key = open("secret.key", "rb").read()
+    f = Fernet(key)
+    decrypted = f.decrypt(data)
+    obj = pickle.loads(decrypted)
+    return obj
+
+
+class Lyrics(object):
+    time: float
+    duration: float
+    text: str
+
+
+# def beautify_lyrics(t):
+#     pt = -900
+#     a = [deque(), deque()]
+#     ptr = 0
+#     c = [0, 0]
+#     printable = set(string.printable)
+#     printable.remove('*')
+#     # rx = r'[^\u0020-\u007e\u00a0-\u00ff\u0152\u0153\u0178]'
+#     for i in t:
+#         i['text'] = ''.join(filter(lambda x: x in printable or x.isalpha(), i['text']))
+#     for i in t:
+#         if i['start'] == pt:
+#             ptr += 1
+#         else:
+#             ptr = 0
+#         if ptr < 2:
+#             if c[ptr] == 0:
+#                 l = Lyrics()
+#                 l.time = i['start']
+#                 l.duration = i['duration']
+#                 l.text = i['text']
+#                 a[ptr].append(l)
+#             else:
+#                 if c[ptr] > 0 and i['text'] in a[ptr][-1].text:
+#                     pass
+#                 else:
+#                     a[ptr][-1].text += ' ' + i['text']
+#                 a[ptr][-1].duration += i['duration']
+#             if i['duration'] + c[ptr] <= 1.2:
+#                 c[ptr] += i['duration']
+#             else:
+#                 c[ptr] = 0
+#         pt = i['start']
+#     if min(len(a[0]), len(a[1])) / max(len(a[0]), len(a[1])) < 0.60:
+#         a.pop()
+#     return a
+
+
+def beautify_lyrics(t):
+    eps = 0.1
+    printable = set(string.printable)
+    printable.remove('*')
+    rx = r'(\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff])'
+    for i in t:
+        i['text'] = ''.join(filter(lambda x: x in printable or x.isalpha() or re.match(rx, x), i['text']))
+    a = [deque(), deque()]
+    for ptr in range(2):
+        c = 0
+        rt = -1
+        for i in range(len(t)):
+            if t[i] is None or t[i]['start'] + eps < rt:
+                continue
+            if c == 0:
+                l = Lyrics()
+                l.time = t[i]['start']
+                l.duration = t[i]['duration']
+                l.text = t[i]['text']
+                a[ptr].append(l)
+            else:
+                if c > 0 and t[i]['text'] in a[ptr][-1].text:
+                    pass
+                else:
+                    a[ptr][-1].text += ' ' + t[i]['text']
+                a[ptr][-1].duration += t[i]['duration']
+            if t[i]['duration'] + c <= 1.2:
+                c += t[i]['duration']
+            else:
+                c = 0
+            rt = t[i]['start'] + t[i]['duration']
+            t[i] = None
+
+    if min(len(a[0]), len(a[1])) / max(len(a[0]), len(a[1])) < 0.60:
+        a.pop()
+    return a
+
+
+def load_lyrics(player: ExtPlayer):
+    try:
+        transcript_list = YouTubeTranscriptApi.list_transcripts(player.track.identifier)
+        transcript = transcript_list.find_manually_created_transcript([player.lyrics_lang])
+        if transcript is not None:
+            transcript = transcript.fetch()
+            player.track.lyrics = beautify_lyrics(transcript)
+            return
+    except Exception as e:
+        with contextlib.suppress(AttributeError):
+            player.track.lyrics = None
+        return
+
+
+def lyrics_embed(player):
+    limit = 500
+    embed = Embed(title=player.track.title, color=Colour.blurple())
+    embed.set_author(name=f'{player.lyrics_lang.upper()} lyrics',
+                     icon_url="https://cdn.discordapp.com/emojis/941343150595772467.webp")
+    fields = []
+    if player is not None and player.track is not None:
+        lyrics = player.track.lyrics
+        time = player.position
+        ratio = time / player.track.length * 0.3
+        strings = []
+        if lyrics is not None:
+            for i in range(len(lyrics)):
+                fields.append(deque())
+                strings.append("")
+                sz = 0
+                pos = None
+                for line in lyrics[i]:
+                    if time < line.time and pos is None:
+                        pos = len(fields[i]) - 1
+                    fields[i].append(line.text)
+                if pos is None:
+                    pos = len(fields[i]) - 1
+                for j in range(len(fields[i])):
+                    if lyrics[i][j].time <= time <= lyrics[i][j].time + lyrics[i][j].duration:
+                        fields[i][j] = '__**' + fields[i][j] + '**__\n\n'
+                    elif j == pos:
+                        fields[i][j] = '**' + fields[i][j] + '**\n\n'
+                    else:
+                        fields[i][j] = '*' + fields[i][j] + '*\n\n'
+                    sz += len(fields[i][j])
+                if pos < 0:
+                    pos = 0
+                while sz > limit or len(fields[i]) > 12:
+                    rate = pos / len(fields[i])
+                    if rate < 0.3 + ratio:
+                        sz -= len(fields[i].pop())
+                    else:
+                        sz -= len(fields[i].popleft())
+                        pos -= 1
+                fields[i] = ''.join(fields[i])
+    if len(fields) == 0:
+        embed.description = "*No lyrics for this song*"
+    for i in range(len(fields)):
+        fields[i] = ('-+'*(17 if len(fields) == 2 else 25)) + '-\n' + fields[i] + \
+                    ('-+'*(17 if len(fields) == 2 else 25)) + '-'
+    for idx, field in enumerate(fields):
+        embed.add_field(name=f'Type {chr(ord("A") + idx)}', value=field, inline=True)
+    return embed
+
+
+async def lyrics_auto_update(player):
+    while player.lyrics_message is not None:
+        with contextlib.suppress(Exception):
+            await player.lyrics_message.edit(embed=lyrics_embed(player))
+        await asyncio.sleep(1.5)
 
 
 # class PlayerView(View):
@@ -390,7 +586,7 @@ class PlayerView(View):
         elif custom_id == 'queue_list':
             value = interaction.data['values'][0]
             for i in range(int(value)):
-                await get_track(self.player.queue)
+                await get_track(self.player.queue, parse=False)
             self.player.loop = False
             await self.player.stop()
         await interaction.response.edit_message()
@@ -449,10 +645,14 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
         if not player.is_playing():
             with contextlib.suppress(Exception):
                 await player.disconnect()
+            with contextlib.suppress(Exception):
                 await player.message.delete()
+            with contextlib.suppress(Exception):
+                await player.lyrics_message.delete()
+            with contextlib.suppress(Exception):
                 await player.ctx.send(embed=build_history_embed(player, "Songs played during the session:"))
-                if player.guild.id in self.players and self.players[player.guild.id] == player:
-                    self.players.pop(player.guild.id)
+            if player.guild.id in self.players and self.players[player.guild.id] == player:
+                self.players.pop(player.guild.id)
 
     @commands.Cog.listener()
     async def on_wavelink_track_end(self, player: ExtPlayer, track: Track, reason):
@@ -465,6 +665,8 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
             self.bot.loop.create_task(self.soft_destroy(player))
         if player.loop:
             await player.play(track)
+            if player.lyrics_message is not None:
+                load_lyrics(player)
         else:
             await play_next(player)
 
@@ -496,13 +698,14 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
             await ctx.send(embed=Embed(title="Which voice channel?", color=Colour.green()), delete_after=10.0)
             return 0
         if self.players[server_id].ctx is None:
-            self.players[server_id].ctx = ctx.channel
+            self.players[server_id].ctx = ctx
         return 1
 
-    @slash_command(name='spotify', description="Play something from Spotify")
+    @slash_command(name='spotify', description="Add playlist from Spotify")
     async def spotify(self, ctx,
                       url: str = SlashOption(description="Album URL or ID", required=True),
-                      vc: GuildChannel = SlashOption(channel_types=[ChannelType.voice], default=None, required=False)):
+                      vc: GuildChannel = SlashOption(channel_types=[ChannelType.voice], default=None, required=False),
+                      top: bool = SlashOption(description="Add song at the top of the queue", required=False)):
         await ctx.response.defer()
         if not await self.update_server_player(ctx, vc):
             return
@@ -510,13 +713,16 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
         player = self.players[server_id]
         queue = player.queue
         try:
-            playlist = spotify.SpotifyTrack.iterator(query=url)
-            await playlist.fill_queue()
+            playlist, node = spotify.SpotifyTrack.iterator(query=url)
+            await playlist.fill_queue(node)
         except Exception:
             await ctx.send(embed=Embed(title="Nothing found :(", color=Colour.dark_red()),
                            delete_after=10.0)
             return
-        queue.append(playlist)
+        if top:
+            queue.appendleft(playlist)
+        else:
+            queue.append(playlist)
         if player.is_playing():
             await ctx.send(embed=Embed(title=f"'**{playlist.name}**' added to queue",
                                        color=Colour.green()),
@@ -531,7 +737,8 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
     @slash_command(name='play', description='Play a song from Youtube')
     async def play(self, ctx,
                    track: str = SlashOption(description="Track name", required=True),
-                   vc: GuildChannel = SlashOption(channel_types=[ChannelType.voice], default=None, required=False)):
+                   vc: GuildChannel = SlashOption(channel_types=[ChannelType.voice], default=None, required=False),
+                   top: bool = SlashOption(description="Add song at the top of the queue", required=False)):
         await ctx.response.defer()
         if not await self.update_server_player(ctx, vc):
             return
@@ -544,7 +751,10 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
             await ctx.send(embed=Embed(title="Nothing found :(", color=Colour.dark_red()),
                            delete_after=10.0)
             return
-        queue.append(track)
+        if top:
+            queue.appendleft(track)
+        else:
+            queue.append(track)
         if player.is_playing():
             await ctx.send(embed=Embed(title=f"Song '**{track.title}**' (*{short_time(track.length)}*) added to queue",
                                        color=Colour.green()),
@@ -556,13 +766,14 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
                            delete_after=10.0)
         await play_next(player)
 
-    @slash_command(name='playlist', description='Add playlist')
+    @slash_command(name='playlist', description='Add playlist from Youtube')
     async def playlist(self, ctx,
                        url: str = SlashOption(description="Playlist URL", required=True),
                        offset: int = SlashOption(description="Track index from which to start playing songs",
                                                  default=0,
                                                  required=False),
-                       vc: GuildChannel = SlashOption(channel_types=[ChannelType.voice], default=None, required=False)):
+                       vc: GuildChannel = SlashOption(channel_types=[ChannelType.voice], default=None, required=False),
+                       top: bool = SlashOption(description="Add song at the top of the queue", required=False)):
         await ctx.response.defer()
         if not await self.update_server_player(ctx, vc):
             return
@@ -576,7 +787,10 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
             await ctx.send(embed=Embed(title="Nothing found :(", color=Colour.dark_red()),
                            delete_after=10.0)
             return
-        queue.append(playlist)
+        if top:
+            queue.appendleft(playlist)
+        else:
+            queue.append(playlist)
         if player.is_playing():
             await ctx.send(embed=Embed(title=f"Playlist '**{playlist.name}**' added to queue",
                                        color=Colour.green()),
@@ -602,6 +816,62 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
                 await player.message.delete()
             player.message = None
             await self.player_message(player)
+            if player.lyrics_message is not None:
+                with contextlib.suppress(errors.NotFound, AttributeError):
+                    old_msg = player.lyrics_message
+                    new_msg = await ctx.send(embed=Embed(title="Lyrics loading", color=Colour.green()))
+                    player.lyrics_message = new_msg
+                    await old_msg.delete()
+
+    @slash_command(name='save', description='Save (serialize) music player state in chat message')
+    async def save(self, ctx,
+                   name: str = SlashOption(description="Dump name (optional)", required=False)):
+        await ctx.response.defer()
+        try:
+            data = io.BytesIO(serialize_music(self.players[ctx.guild.id]))
+            embed = Embed(description='Use ***floppy disk*** react on this message to restore the dump\n'
+                                      '**This action will overwrite all current music state**\n '
+                                      'If nothing is playing now, you should be in the voice channel',
+                          color=Colour.blurple())
+            if name is None:
+                name = ""
+            else:
+                name = '"' + name[:128] + '" '
+            embed.set_author(name='Dump ' + name + 'saved',
+                             icon_url="https://cdn.discordapp.com/emojis/884559976016805888.webp")
+            message = await ctx.send(embed=embed, file=File(data, "dump"))
+            await message.add_reaction('💾')
+        except:
+            embed = Embed(description='Something went wrong...',
+                          color=Colour.blurple())
+            await ctx.send(embed=embed, delete_after=5.0)
+
+    async def load(self, message, user):
+        try:
+            server_id = message.guild.id
+            file_url = message.attachments[0].url
+            request = Request(
+                file_url,
+                headers={'User-Agent': 'Mozilla/5.0'}
+            )
+            binary = urlopen(request).read()
+            obj = deserialize_music(binary)
+            obj['queue'].appendleft(obj['track'])
+            if server_id not in self.players:
+                if user.voice is None:
+                    await message.channel.send(embed=Embed(title="Which voice channel?", color=Colour.green()),
+                                               delete_after=10.0)
+                    raise Exception('No voice chat')
+                await self.update_server_player(message.channel, user.voice.channel)
+            self.players[server_id].queue = obj['queue']
+            self.players[server_id].history = obj['history']
+            if self.players[server_id].is_playing():
+                await self.players[server_id].stop()
+            else:
+                await play_next(self.players[server_id])
+        except Exception as e:
+            return False
+        return True
 
     @slash_command(name='shuffle', description='Queue random shuffle')
     async def shuffle(self, ctx):
@@ -610,7 +880,7 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
             player = self.players[ctx.guild.id]
             for item in player.queue:
                 if isinstance(item, wavelink.tracks.YouTubePlaylist):
-                    my_shuffle(item.tracks, len(item.tracks) - item.selected_track, None)
+                    my_shuffle(item.tracks, item.selected_track)
                 elif isinstance(item, spotify.SpotifyAsyncIterator):
                     random.shuffle(item.tracks)
             random.shuffle(player.queue)
@@ -681,16 +951,24 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
             embed = Embed(title="Nothing to pause", color=Colour.gold())
         await ctx.send(embed=embed, delete_after=10.0)
 
-    @slash_command(name='stfu', description='Stop current song and clear song queue')
+    @slash_command(name='stfu', description='Stop current song and clear song queue '
+                                            '(immediately destroys music player session)')
     async def disconnect(self, ctx):
         server_id = ctx.guild.id
-        if server_id in self.players and self.players[server_id].is_playing():
+        if server_id in self.players:
             player = self.players[server_id]
             player.queue.clear()
             player.loop = False
             await self.players[server_id].stop()
             embed = Embed(color=Colour.blurple())
             embed.set_author(name='Ok', icon_url="https://cdn.discordapp.com/emojis/807417229976272896.webp")
+            with contextlib.suppress(Exception):
+                await player.disconnect()
+            with contextlib.suppress(Exception):
+                await player.lyrics_message.delete()
+            with contextlib.suppress(Exception):
+                await player.message.delete()
+            self.players.pop(player.guild.id)
         else:
             embed = Embed(color=Colour.blurple())
             embed.set_author(name="I've been quiet enough",
@@ -759,6 +1037,32 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
             embed = Embed(title="Nothing to loop", color=Colour.blurple())
         await ctx.send(embed=embed, delete_after=10.0)
 
+    @slash_command(name='lyrics', description='Show lyrics of the song')
+    async def lyrics(self, ctx, lang: str = SlashOption(description='Lyrics language', default='en',
+                                                        choices={
+                                                            "English": "en",
+                                                            "Japanese": "ja",
+                                                            "Russian": "ru"
+                                                        },
+                                                        required=False)):
+        await ctx.response.defer()
+        server_id = ctx.guild.id
+        if server_id in self.players and self.players[server_id].is_playing():
+            player = self.players[server_id]
+            if player.lyrics_message is None:
+                player.lyrics_lang = lang
+                load_lyrics(player)
+                player.lyrics_message = await ctx.send(embed=lyrics_embed(player))
+                self.bot.loop.create_task(lyrics_auto_update(player))
+            else:
+                await player.lyrics_message.delete()
+                player.lyrics_message = None
+                embed = Embed(title="Lyrics disabled", color=Colour.gold())
+                await ctx.send(embed=embed, delete_after=5.0)
+        else:
+            embed = Embed(title="Nothing playing at this moment", color=Colour.gold())
+            await ctx.send(embed=embed, delete_after=5.0)
+
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload):
         server_id = payload.guild_id
@@ -769,14 +1073,27 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
             return
 
         user = self.bot.get_user(payload.user_id)
-        if server_id not in self.players or self.players[server_id].message.id != message.id:
+        if payload.user_id != self.bot.user.id and len(message.reactions) > 0 and \
+                message.reactions[0].emoji == '💾' and message.reactions[0].me:
+            await message.remove_reaction(payload.emoji, user)
+            res = await self.load(message, payload.member)
+            if res:
+                await message.add_reaction('👍')
+            else:
+                await message.add_reaction('👎')
+            return
+
+        if server_id not in self.players or \
+                (self.players[server_id].message is not None and self.players[server_id].message.id != message.id):
             with contextlib.suppress(Exception):
                 text = message.embeds[0].description
                 if 'Length' in text and 'Volume' in text and 'Timeline' in text:
                     await message.delete()
             return
+
         if payload.user_id != self.bot.user.id:
             await message.add_reaction(emoji.emojize(':angry_face:'))
+            await message.remove_reaction(payload.emoji, user)
         else:
             await asyncio.sleep(2)
             with contextlib.suppress(errors.NotFound):
