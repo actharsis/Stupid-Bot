@@ -113,40 +113,34 @@ class SpotifySearchType(enum.Enum):
 
 class SpotifyAsyncIterator:
 
-    def __init__(self, *, query: str, limit: int, type: SpotifySearchType, node: Node, partial: bool):
+    def __init__(self, *, query: str, limit: int, type: SpotifySearchType, partial: bool):
         self.name = "Spotify playlist"
         self.tracks = collections.deque()
         self.selected_track = 0
         self._query = query
         self._limit = limit
         self._type = type
-        self._node = node
-
         self._partial = partial
-
-        self._first = True
-        self._count = 0
 
     def __aiter__(self):
         return self
 
-    async def fill_queue(self):
-        tracks = await self._node._spotify._search(query=self._query, iterator=True, type=self._type)
+    async def fill_queue(self, node):
+        tracks = await node._spotify._search(query=self._query, iterator=True)
 
         for track in tracks:
             self.tracks.append(track)
 
-    async def __anext__(self):
-        if self._first:
-            await self.fill_queue()
-            self._first = False
-
-        if self._limit is not None and self._count == self._limit:
+    async def __skipanext__(self):
+        if len(self.tracks) > 0:
+            self.tracks.popleft()
+        else:
             raise StopAsyncIteration
 
-        try:
+    async def __anext__(self):
+        if len(self.tracks) > 0:
             track = self.tracks.popleft()
-        except asyncio.QueueEmpty:
+        else:
             raise StopAsyncIteration
 
         if track is None:
@@ -158,7 +152,6 @@ class SpotifyAsyncIterator:
             track = (await wavelink.YouTubeTrack.search(query=f'{track["name"]} -'
                                                               f' {track["artists"][0]["name"]}'))[0]
 
-        self._count += 1
         return track
 
 
@@ -219,7 +212,7 @@ class SpotifyClient:
 
     async def _search(self,
                       query: str,
-                      type: SpotifySearchType = SpotifySearchType.track,
+                      type: SpotifySearchType = SpotifySearchType.playlist,
                       iterator: bool = False,
                       ) -> Optional[List[YouTubeTrack]]:
 
@@ -365,7 +358,7 @@ class SpotifyTrack(YouTubeTrack):
         if node is MISSING:
             node = NodePool.get_node()
 
-        return SpotifyAsyncIterator(query=query, limit=limit, node=node, type=type, partial=partial_tracks)
+        return SpotifyAsyncIterator(query=query, limit=limit, type=type, partial=partial_tracks), node
 
     @classmethod
     async def convert(cls: Type[ST], ctx: commands.Context, argument: str) -> ST:
