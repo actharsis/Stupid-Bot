@@ -1,7 +1,9 @@
 import asyncio
 
 import pandas as pd
+import seaborn as sns
 from nextcord import ChannelType, Embed
+
 
 
 def time_to_str(time):
@@ -38,6 +40,14 @@ class AnalysisModule:
         except KeyError:
             embed = Embed(title="Voice activity", description="Empty.")
         await ctx.send(embed=embed, ephemeral=True)
+
+    async def get_activity_date_plot(self, ctx):
+        df = pd.DataFrame(list(self.messages_collection.find(
+                {"guild_id": ctx.guild.id, "author_id": ctx.author_id},
+                ["author_id", "content", "attachments_number", "timestamp"])))
+        print(df.dtypes)
+        answer = ''
+        return answer
 
     async def voice_activity_check(self):
         while True:

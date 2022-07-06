@@ -138,6 +138,11 @@ class MiscCog(commands.Cog):
     async def send_voice_activity(self, ctx):
         await self.analyzer.get_voice_activity(ctx)
 
+    @slash_command(name='activity_date_plot')
+    async def send_activity_date_plot(self, ctx):
+        answer = await self.analyzer.get_activity_date_plot(ctx)
+        await ctx.send(embed=answer, ephemeral=True)
+
 
 def setup(bot):
     bot.add_cog(MiscCog(bot))
