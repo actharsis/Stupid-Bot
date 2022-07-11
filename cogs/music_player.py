@@ -180,6 +180,20 @@ async def play_next(player: wavelink.player):
         load_lyrics(player)
 
 
+async def player_terminate(player, players, history=False):
+    with contextlib.suppress(Exception):
+        await player.disconnect()
+    with contextlib.suppress(Exception):
+        await player.lyrics_message.delete()
+    with contextlib.suppress(Exception):
+        await player.message.delete()
+    if history:
+        with contextlib.suppress(Exception):
+            await player.ctx.send(embed=build_history_embed(player, "Songs played during the session:"))
+    if player.guild.id in players and players[player.guild.id] == player:
+        players.pop(player.guild.id)
+
+
 async def message_auto_update(player):
     idx = player.message.id
     while player.message is not None and idx == player.message.id:
@@ -189,6 +203,8 @@ async def message_auto_update(player):
                 embed=player_embed(player),
                 view=view
             )
+        except errors.HTTPException:
+            pass
         except (errors.NotFound, AttributeError):
             player.message = None
             return
@@ -643,16 +659,7 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
         if h != player.hash:
             return
         if not player.is_playing():
-            with contextlib.suppress(Exception):
-                await player.disconnect()
-            with contextlib.suppress(Exception):
-                await player.message.delete()
-            with contextlib.suppress(Exception):
-                await player.lyrics_message.delete()
-            with contextlib.suppress(Exception):
-                await player.ctx.send(embed=build_history_embed(player, "Songs played during the session:"))
-            if player.guild.id in self.players and self.players[player.guild.id] == player:
-                self.players.pop(player.guild.id)
+            await player_terminate(player, self.players, history=True)
 
     @commands.Cog.listener()
     async def on_wavelink_track_end(self, player: ExtPlayer, track: Track, reason):
@@ -962,13 +969,7 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
             await self.players[server_id].stop()
             embed = Embed(color=Colour.blurple())
             embed.set_author(name='Ok', icon_url="https://cdn.discordapp.com/emojis/807417229976272896.webp")
-            with contextlib.suppress(Exception):
-                await player.disconnect()
-            with contextlib.suppress(Exception):
-                await player.lyrics_message.delete()
-            with contextlib.suppress(Exception):
-                await player.message.delete()
-            self.players.pop(player.guild.id)
+            await player_terminate(player, self.players)
         else:
             embed = Embed(color=Colour.blurple())
             embed.set_author(name="I've been quiet enough",

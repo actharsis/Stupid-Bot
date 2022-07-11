@@ -221,7 +221,7 @@ class PixivCog(commands.Cog, name="Pixiv"):
         self.queues.put_nowait(0)
         self.history = {}
         self.bot.loop.create_task(self.load())
-        self.delay = 1
+        self.delay = 1.5
 
     def save(self, channels=False, timers=False, tokens=False):
         if channels:
@@ -775,9 +775,11 @@ class PixivCog(commands.Cog, name="Pixiv"):
             await message.remove_reaction(payload.emoji, user)
 
     async def auto_draw(self):
-        with contextlib.suppress(RuntimeError):
-            bad_channels = []
-            for channel_id, options in self.channels.items():
+        bad_channels = []
+        if self.channels is None:
+            return
+        for channel_id, options in self.channels.items():
+            with contextlib.suppress(Exception):
                 channel = self.bot.get_channel(int(channel_id))
                 if channel is None:
                     bad_channels.append(channel_id)
@@ -794,10 +796,10 @@ class PixivCog(commands.Cog, name="Pixiv"):
                     query = await api.illust_recommended()
                     await self.show_page(api, query, channel, limit=limit)
                     self.save(timers=True)
-            for channel_id in bad_channels:
-                self.channels.pop(channel_id)
-            if bad_channels:
-                self.save(channels=True)
+        for channel_id in bad_channels:
+            self.channels.pop(channel_id)
+        if bad_channels:
+            self.save(channels=True)
 
     async def auto_refresh_tokens(self):
         timestamp = time.time()
@@ -812,8 +814,10 @@ class PixivCog(commands.Cog, name="Pixiv"):
     async def on_ready(self):
         while True:
             await asyncio.sleep(30)
-            await self.auto_refresh_tokens()
-            await self.auto_draw()
+            with contextlib.suppress(Exception):
+                await self.auto_refresh_tokens()
+            with contextlib.suppress(Exception):
+                await self.auto_draw()
             self.save(channels=True, timers=True)
 
 
