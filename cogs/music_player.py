@@ -1,12 +1,12 @@
 import asyncio
 import contextlib
-import re
-
 import emoji
 import io
+import json
 import math
 import pickle
 import random
+import re
 import string
 
 from config import *
@@ -24,6 +24,7 @@ from nextcord.colour import Colour
 from nextcord.ext import commands
 from nextcord.ui import Button, Select, View
 from os.path import exists
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from youtube_transcript_api import YouTubeTranscriptApi
 
@@ -142,12 +143,17 @@ def build_history_embed(player, title: str):
 
 def player_embed(player):
     track = player.track
+    options = []
+    if player.loop:
+        options.append('*On repeat*')
+    if player.related:
+        options.append('*Plays related*')
     if track is not None:
         embed = Embed(description=f"[**{track.title}**]({track.uri})\n"
                                   f"**Length**: *{time_to_str(track.length)}*; **Volume**: *{int(player.volume)}*\n"
                                   f"**Timeline**: *{short_time(player.position)}/{short_time(track.length)}*\n"
                                   f"```{render_bar(36, player.position, track.length)}```"
-                                  f"{'*On repeat*' if player.loop else ''}",
+                                  f"{', '.join(options)}",
                       color=Colour.blurple())
         if player.is_paused():
             embed.set_author(name='On pause:',
@@ -164,7 +170,7 @@ def player_embed(player):
                                   f"**Length**: *{time_to_str(0)}*; **Volume**: *{int(player.volume)}*\n"
                                   f"**Timeline**: *{short_time(0)}/{short_time(0)}*\n"
                                   f"```{render_bar(36, 1, 1)}```"
-                                  f"{'*On repeat*' if player.loop else ''}",
+                                  f"{','.join(options)}",
                       color=Colour.blurple())
         embed.set_author(name='Stopped.',
                          icon_url='https://cdn.discordapp.com/emojis/884559976016805888.webp')
@@ -172,12 +178,41 @@ def player_embed(player):
     return embed
 
 
-async def play_next(player: wavelink.player):
-    if player.queue:
-        track = await get_track(player.queue)
-        await player.play(track)
-    if player.lyrics_message is not None:
-        load_lyrics(player)
+def get_related(identifier):
+    with urlopen(f'https://www.googleapis.com/youtube/v3/search?relatedToVideoId={identifier}'
+                 f'&part=snippet&maxResults=4&fields=items(snippet/title)&type=video'
+                 f'&key={YOUTUBE_API_TOKEN}') as url:
+        data = json.loads(url.read().decode())
+        random.shuffle(data['items'])
+        for item in data['items']:
+            if 'snippet' in item:
+                return item['snippet']['title']
+
+
+async def play_next(player: wavelink.player, prev=None):
+    try:
+        if prev is not None:
+            if player.loop:
+                await player.play(prev)
+                return
+            if player.related:
+                try:
+                    track = await wavelink.YouTubeTrack.search(query=get_related(prev.identifier), return_first=True)
+                    await player.play(track)
+                    return
+                except HTTPError:
+                    player.ctx.send(Embed(title="Related disabled - quota limit reached",
+                                          color=Colour.red()), delete_after=5.0)
+                    player.related = False
+                except Exception:
+                    player.ctx.send(Embed(title="No related for this song",
+                                          color=Colour.gold()), delete_after=5.0)
+        if player.queue:
+            track = await get_track(player.queue)
+            await player.play(track)
+    finally:
+        if player.lyrics_message is not None:
+            load_lyrics(player)
 
 
 async def player_terminate(player, players, history=False):
@@ -219,6 +254,7 @@ class ExtPlayer(wavelink.Player):
                  node: Node = MISSING):
         super().__init__(client, channel, node=node)
         self.loop = False
+        self.related = False
         self.queue = deque()
         self.history = deque()
         self.message = None
@@ -496,26 +532,28 @@ class PlayerView(View):
                              emoji=emoji.emojize(':last_track_button:'), row=0))
         self.add_item(Button(custom_id="back", style=ButtonStyle.green,
                              emoji=emoji.emojize(':reverse_button:'), row=0))
-        if self.player.is_paused():
-            self.add_item(Button(custom_id="pause", style=ButtonStyle.red,
-                                 emoji=emoji.emojize(':pause_button:'), row=0))
-        else:
-            self.add_item(Button(custom_id="pause", style=ButtonStyle.green,
-                                 emoji=emoji.emojize(':pause_button:'), row=0))
+        self.add_item(Button(custom_id="pause",
+                             style=(ButtonStyle.red if self.player.is_paused() else ButtonStyle.green),
+                             emoji=emoji.emojize(':pause_button:'), row=0))
         self.add_item(Button(custom_id="forw", style=ButtonStyle.green,
                              emoji=emoji.emojize(':play_button:'), row=0))
         self.add_item(Button(custom_id="next", style=ButtonStyle.blurple,
                              emoji=emoji.emojize(':next_track_button:'), row=0))
-        if VOLUME_LOCK:
-            self.add_item(Button(label="Mute", custom_id="mute", disabled=True,
-                                 emoji=emoji.emojize(':muted_speaker:'), row=1))
-        elif self.player.volume > 0:
-            self.add_item(Button(label="Mute", custom_id="mute",
-                                 emoji=emoji.emojize(':muted_speaker:'), row=1))
-        else:
-            self.add_item(Button(label="Unmute", custom_id="mute",
-                                 emoji=emoji.emojize(':speaker_high_volume:'), row=1))
-        self.add_item(Button(label="Loop", custom_id="repeat", emoji=emoji.emojize(':repeat_button:'), row=1))
+        # if VOLUME_LOCK:
+        #     self.add_item(Button(label="Mute", custom_id="mute", disabled=True,
+        #                          emoji=emoji.emojize(':muted_speaker:'), row=1))
+        # elif self.player.volume > 0:
+        #     self.add_item(Button(label="Mute", custom_id="mute",
+        #                          emoji=emoji.emojize(':muted_speaker:'), row=1))
+        # else:
+        #     self.add_item(Button(label="Unmute", custom_id="mute",
+        #                          emoji=emoji.emojize(':speaker_high_volume:'), row=1))
+        self.add_item(Button(label="Auto", custom_id="related",
+                             style=(ButtonStyle.green if self.player.related else ButtonStyle.gray),
+                             emoji=emoji.emojize(':seedling:'), row=1))
+        self.add_item(Button(label="Loop", custom_id="repeat",
+                             style=(ButtonStyle.green if self.player.loop else ButtonStyle.gray),
+                             emoji=emoji.emojize(':repeat_button:'), row=1))
         self.add_item(Button(label="Log", custom_id="history", emoji=emoji.emojize(':scroll:'), row=1))
         self.add_item(Button(label="Quit", custom_id="stop", style=ButtonStyle.red,
                              emoji=emoji.emojize(':black_large_square:'), row=1))
@@ -555,6 +593,7 @@ class PlayerView(View):
             if self.player.history:
                 prev = self.player.history.pop()['track']
                 self.player.loop = False
+                self.player.related = False
                 if self.player.is_playing():
                     self.player.queue.appendleft(prev)
                     await self.player.stop()
@@ -588,10 +627,13 @@ class PlayerView(View):
                 await self.player.set_volume(0)
             else:
                 await self.player.set_volume(100)
+        elif custom_id == 'related':
+            self.player.related ^= True
         elif custom_id == 'repeat':
             self.player.loop ^= True
         elif custom_id == 'stop':
             self.player.loop = False
+            self.player.related = False
             self.player.queue.clear()
             await self.player.stop()
         elif custom_id == 'history':
@@ -670,12 +712,7 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
 
         if not player.is_playing():
             self.bot.loop.create_task(self.soft_destroy(player))
-        if player.loop:
-            await player.play(track)
-            if player.lyrics_message is not None:
-                load_lyrics(player)
-        else:
-            await play_next(player)
+        await play_next(player, track)
 
     async def player_message(self, player: ExtPlayer):
         ctx = player.ctx
@@ -966,6 +1003,7 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
             player = self.players[server_id]
             player.queue.clear()
             player.loop = False
+            player.related = False
             await self.players[server_id].stop()
             embed = Embed(color=Colour.blurple())
             embed.set_author(name='Ok', icon_url="https://cdn.discordapp.com/emojis/807417229976272896.webp")
@@ -1023,19 +1061,37 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
             embed = Embed(title="Player not initialized", color=Colour.blurple())
         await ctx.send(embed=embed, delete_after=10.0)
 
-    @slash_command(name='loop', description='Repeat song infinitely (disables on skip/stop)')
+    @slash_command(name='loop', description='Repeat song infinitely (turns off when skipped, stopped, plays previous)')
     async def loop(self, ctx):
         await ctx.response.defer()
         server_id = ctx.guild.id
         if server_id in self.players and self.players[server_id].is_playing():
             player = self.players[server_id]
-            if player.loop[server_id]:
+            if player.loop:
                 embed = Embed(title="Replay disabled", color=Colour.blurple())
             else:
                 embed = Embed(title="On replay", color=Colour.blurple())
             player.loop ^= True
         else:
             embed = Embed(title="Nothing to loop", color=Colour.blurple())
+        await ctx.send(embed=embed, delete_after=10.0)
+
+    @slash_command(name='related', description='Play related songs (turns off when stopped, plays previous)')
+    async def related(self, ctx):
+        await ctx.response.defer()
+        if not YOUTUBE_API_TOKEN:
+            embed = Embed(title="Youtube token not specified, but required for this command", color=Colour.dark_red())
+            await ctx.send(embed=embed, delete_after=5.0)
+        server_id = ctx.guild.id
+        if server_id in self.players and self.players[server_id].is_playing():
+            player = self.players[server_id]
+            if player.related:
+                embed = Embed(title="Auto-select disabled", color=Colour.blurple())
+            else:
+                embed = Embed(title="Related mode turned on", color=Colour.blurple())
+            player.related ^= True
+        else:
+            embed = Embed(title="Nothing is playing", color=Colour.blurple())
         await ctx.send(embed=embed, delete_after=10.0)
 
     @slash_command(name='lyrics', description='Show lyrics of the song')
@@ -1075,7 +1131,7 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
 
         user = self.bot.get_user(payload.user_id)
         if payload.user_id != self.bot.user.id and len(message.reactions) > 0 and \
-                message.reactions[0].emoji == '💾' and message.reactions[0].me:
+                message.reactions[0].emoji == '💾':
             await message.remove_reaction(payload.emoji, user)
             res = await self.load(message, payload.member)
             if res:

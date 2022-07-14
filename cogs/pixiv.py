@@ -315,7 +315,6 @@ class PixivCog(commands.Cog, name="Pixiv"):
         if channel is None or query is None or query.illusts is None or len(query.illusts) == 0:
             return 0, 0, False
         shown = 0
-        # print('fetched', len(query.illusts), 'images')
         color = Colour.random()
         for illust in query.illusts:
             if not good_image(illust, minimum_views, minimum_rate, max_sanity) or \
@@ -552,6 +551,7 @@ class PixivCog(commands.Cog, name="Pixiv"):
                              offset=0, shown=0, rv=None, lvl=0):
         find_next = False
         query = None
+        good = 0
         if shown < limit and lvl < 10:
             query = await api.search_illust(word, search_target=match,
                                             end_date=selected_date, offset=offset)
@@ -563,7 +563,6 @@ class PixivCog(commands.Cog, name="Pixiv"):
                 good, total, alive = await self.show_page(api, query, ctx.channel, limit - shown, use_history=False,
                                                           minimum_views=views, minimum_rate=rate,
                                                           max_sanity=max_sanity_level, dry_run=True)
-                shown += good
                 self.fetched[rv] += total
                 if alive:
                     offset += total
@@ -573,10 +572,10 @@ class PixivCog(commands.Cog, name="Pixiv"):
             self.bot.loop.create_task(
                 self.recursive_find(api, ctx, word, match, limit,
                                     views, rate, max_sanity_level, selected_date,
-                                    offset=offset, shown=shown, rv=rv, lvl=lvl+1)
+                                    offset=offset, shown=shown + good, rv=rv, lvl=lvl+1)
             )
             self.bot.loop.create_task(
-                self.show_page(api, query, ctx.channel, limit - shown,
+                self.show_page(api, query, ctx.channel, good,
                                use_history=False, minimum_views=views,
                                minimum_rate=rate, max_sanity=max_sanity_level)
             )
