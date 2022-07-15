@@ -180,10 +180,12 @@ def player_embed(player):
 
 def get_related(identifier):
     with urlopen(f'https://www.googleapis.com/youtube/v3/search?relatedToVideoId={identifier}'
-                 f'&part=snippet&maxResults=4&fields=items(snippet/title)&type=video'
+                 f'&part=snippet&maxResults=3&fields=items(snippet/title)&type=video&videoCategoryId=10'
                  f'&key={YOUTUBE_API_TOKEN}') as url:
         data = json.loads(url.read().decode())
-        random.shuffle(data['items'])
+        if random.random() > 0.5:
+            data['items'][0], data['items'][1] = data['items'][1], data['items'][0]
+        # random.shuffle(data['items'])
         for item in data['items']:
             if 'snippet' in item:
                 return item['snippet']['title']
@@ -195,21 +197,22 @@ async def play_next(player: wavelink.player, prev=None):
             if player.loop:
                 await player.play(prev)
                 return
-            if player.related:
-                try:
-                    track = await wavelink.YouTubeTrack.search(query=get_related(prev.identifier), return_first=True)
-                    await player.play(track)
-                    return
-                except HTTPError:
-                    player.ctx.send(Embed(title="Related disabled - quota limit reached",
-                                          color=Colour.red()), delete_after=5.0)
-                    player.related = False
-                except Exception:
-                    player.ctx.send(Embed(title="No related for this song",
-                                          color=Colour.gold()), delete_after=5.0)
         if player.queue:
             track = await get_track(player.queue)
             await player.play(track)
+            return
+        if player.related:
+            try:
+                track = await wavelink.YouTubeTrack.search(query=get_related(prev.identifier), return_first=True)
+                await player.play(track)
+                return
+            except HTTPError:
+                await player.ctx.send(Embed(title="Related disabled - quota limit reached",
+                                            color=Colour.red()), delete_after=5.0)
+                player.related = False
+            except Exception:
+                await player.ctx.send(Embed(title="No related for this song",
+                                            color=Colour.gold()), delete_after=5.0)
     finally:
         if player.lyrics_message is not None:
             load_lyrics(player)

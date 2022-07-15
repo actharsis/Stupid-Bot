@@ -87,19 +87,14 @@ async def selenium_login(log, pwd):
     }
 
     driver.get(f"{LOGIN_URL}?{urlencode(login_params)}")
-    log_field = driver.find_element(By.CSS_SELECTOR,
-                                    '#LoginComponent > form >\
-                                    div.input-field-group > div:nth-child(1)')
-    pass_field = driver.find_element(By.CSS_SELECTOR,
-                                     '#LoginComponent > form >\
-                                     div.input-field-group > div:nth-child(2)')
+    log_field = driver.find_element(By.XPATH, '//form/fieldset[1]/label/input')
+    pass_field = driver.find_element(By.XPATH, '//form/fieldset[2]/label/input')
     button = driver.find_element(
-        By.CSS_SELECTOR, '#LoginComponent > form > button')
+        By.XPATH, '//form/button')
     ActionChains(driver).\
         send_keys_to_element(log_field, log).\
         send_keys_to_element(pass_field, pwd).\
         move_to_element(button).click().perform()
-    #
 
     ok = False
     for _ in range(60):
