@@ -234,6 +234,7 @@ async def player_terminate(player, players, history=False):
 
 async def message_auto_update(player):
     idx = player.message.id
+    bad_req = 0
     while player.message is not None and idx == player.message.id:
         try:
             view = PlayerView(player)
@@ -241,8 +242,12 @@ async def message_auto_update(player):
                 embed=player_embed(player),
                 view=view
             )
+            bad_req = 0
         except errors.HTTPException:
-            pass
+            if bad_req >= 15:
+                player.message = None
+                return
+            bad_req += 1
         except (errors.NotFound, AttributeError):
             player.message = None
             return
@@ -440,9 +445,20 @@ def lyrics_embed(player):
 
 
 async def lyrics_auto_update(player):
-    while player.lyrics_message is not None:
-        with contextlib.suppress(Exception):
+    idx = player.lyrics_message.id
+    bad_req = 0
+    while player.lyrics_message is not None and idx == player.lyrics_message.id:
+        try:
             await player.lyrics_message.edit(embed=lyrics_embed(player))
+            bad_req = 0
+        except errors.HTTPException:
+            if bad_req >= 15:
+                player.message = None
+                return
+            bad_req += 1
+        except (errors.NotFound, AttributeError):
+            player.message = None
+            return
         await asyncio.sleep(1.5)
 
 
