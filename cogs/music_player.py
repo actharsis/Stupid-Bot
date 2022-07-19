@@ -243,13 +243,15 @@ async def message_auto_update(player):
                 view=view
             )
             bad_req = 0
+        except (errors.NotFound, AttributeError):
+            player.message = None
+            return
         except errors.HTTPException:
-            if bad_req >= 15:
+            if bad_req >= 10:
                 player.message = None
                 return
             bad_req += 1
-        except (errors.NotFound, AttributeError):
-            player.message = None
+        except Exception:
             return
         await asyncio.sleep(1)
 
@@ -393,6 +395,13 @@ def load_lyrics(player: ExtPlayer):
         return
 
 
+async def init_lyrics(player: ExtPlayer, lang: str, ctx, bot):
+    player.lyrics_lang = lang
+    load_lyrics(player)
+    player.lyrics_message = await ctx.send(embed=lyrics_embed(player))
+    bot.loop.create_task(lyrics_auto_update(player))
+
+
 def lyrics_embed(player):
     limit = 500
     embed = Embed(title=player.track.title, color=Colour.blurple())
@@ -451,13 +460,15 @@ async def lyrics_auto_update(player):
         try:
             await player.lyrics_message.edit(embed=lyrics_embed(player))
             bad_req = 0
+        except (errors.NotFound, AttributeError):
+            player.lyrics_message = None
+            return
         except errors.HTTPException:
-            if bad_req >= 15:
-                player.message = None
+            if bad_req >= 10:
+                player.lyrics_message = None
                 return
             bad_req += 1
-        except (errors.NotFound, AttributeError):
-            player.message = None
+        except Exception:
             return
         await asyncio.sleep(1.5)
 
@@ -881,10 +892,9 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
             await self.player_message(player)
             if player.lyrics_message is not None:
                 with contextlib.suppress(errors.NotFound, AttributeError):
-                    old_msg = player.lyrics_message
-                    new_msg = await ctx.send(embed=Embed(title="Lyrics loading", color=Colour.green()))
-                    player.lyrics_message = new_msg
-                    await old_msg.delete()
+                    await player.lyrics_message.delete()
+                await init_lyrics(player, player.lyrics_lang, ctx, self.bot)
+
 
     @slash_command(name='save', description='Save (serialize) music player state in chat message')
     async def save(self, ctx,
@@ -1126,12 +1136,13 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
         if server_id in self.players and self.players[server_id].is_playing():
             player = self.players[server_id]
             if player.lyrics_message is None:
-                player.lyrics_lang = lang
-                load_lyrics(player)
-                player.lyrics_message = await ctx.send(embed=lyrics_embed(player))
-                self.bot.loop.create_task(lyrics_auto_update(player))
+                await init_lyrics(player, lang, ctx, self.bot)
             else:
-                await player.lyrics_message.delete()
+                try:
+                    await player.lyrics_message.delete()
+                except errors.HTTPException:
+                    await init_lyrics(player, lang, ctx, self.bot)
+                    return
                 player.lyrics_message = None
                 embed = Embed(title="Lyrics disabled", color=Colour.gold())
                 await ctx.send(embed=embed, delete_after=5.0)
