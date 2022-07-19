@@ -39,7 +39,7 @@ class AnalysisModule:
             embed = Embed(title="Voice activity", description=answer)
         except KeyError:
             embed = Embed(title="Voice activity", description="Empty.")
-        await ctx.send(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
 
     async def get_activity_date_plot(self, ctx):
         df = pd.DataFrame(list(self.messages_collection.find(
@@ -122,4 +122,4 @@ class AnalysisModule:
             embed = Embed(title="Top", description=answer)
         except KeyError:
             embed = Embed(title="Top", description="Empty.")
-        await ctx.response.send_message(embed=embed, ephemeral=True)
+        await ctx.response.send_message(embed=embed)
