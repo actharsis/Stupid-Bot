@@ -136,10 +136,10 @@ class TokenModal(ui.Modal):
         await self.auth(token)
 
 
-def good_image(illust, minimum_views, minimum_rate, max_sanity):
+def good_image(illust, minimum_views, minimum_rate, min_sanity, max_sanity):
     return (minimum_views is None or illust.total_view >= minimum_views) and\
         (minimum_rate is None or illust.total_bookmarks / illust.total_view * 100 >= minimum_rate)\
-        and max_sanity >= illust.sanity_level
+        and min_sanity <= illust.sanity_level <= max_sanity
 
 
 async def send(illust, channel, file, filename, color, show_title):
@@ -311,13 +311,15 @@ class PixivCog(commands.Cog, name="Pixiv"):
         return False
 
     async def show_page(self, api, query, channel, limit=30, use_history=True,
-                        minimum_views=None, minimum_rate=None, max_sanity=6, dry_run=False):
+                        minimum_views=None, minimum_rate=None, min_sanity=0, max_sanity=6, dry_run=False):
         if channel is None or query is None or query.illusts is None or len(query.illusts) == 0:
             return 0, 0, False
+        if channel.nsfw:
+            min_sanity = 5
         shown = 0
         color = Colour.random()
         for illust in query.illusts:
-            if not good_image(illust, minimum_views, minimum_rate, max_sanity) or \
+            if not good_image(illust, minimum_views, minimum_rate, min_sanity, max_sanity) or \
                use_history and not dry_run and self.history_repeating(illust, channel):
                 continue
             if not dry_run:
@@ -552,7 +554,7 @@ class PixivCog(commands.Cog, name="Pixiv"):
         find_next = False
         query = None
         good = 0
-        if shown < limit and lvl < 10:
+        if shown < limit and lvl < 15:
             query = await api.search_illust(word, search_target=match,
                                             end_date=selected_date, offset=offset)
             alive = True
@@ -650,6 +652,8 @@ class PixivCog(commands.Cog, name="Pixiv"):
                        required=False
                    )):
         await ctx.response.defer()
+        if ctx.channel.nsfw:
+            max_sanity_level = 6
         api = self.get_api(ctx.guild.id)
         with contextlib.suppress(Exception):
             word = (await api.search_autocomplete(word)).tags[0].name
