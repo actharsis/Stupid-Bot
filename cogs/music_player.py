@@ -262,12 +262,12 @@ async def player_message(player: ExtPlayer, bot):
 
 async def respawn_player_body(player, ctx, bot):
     player.ctx = ctx.channel
-    with contextlib.suppress(errors.NotFound, AttributeError):
+    with contextlib.suppress(errors.NotFound, AttributeError, HTTPError):
         await player.message.delete()
     player.message = None
     await player_message(player, bot)
     if player.lyrics_message is not None:
-        with contextlib.suppress(errors.NotFound, AttributeError):
+        with contextlib.suppress(errors.NotFound, AttributeError, HTTPError):
             await player.lyrics_message.delete()
         await init_lyrics(player, player.lyrics_lang, ctx, bot)
 
