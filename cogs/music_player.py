@@ -64,6 +64,25 @@ def cut_text(text, limit):
     return f"{text[:limit]}..." if len(text) > limit else text
 
 
+class ExtPlayer(wavelink.Player):
+    def __init__(self,
+                 client: Client = MISSING,
+                 channel: VoiceChannel = MISSING,
+                 *,
+                 node: Node = MISSING):
+        super().__init__(client, channel, node=node)
+        self.loop = False
+        self.related = False
+        self.queue = deque()
+        self.history = deque()
+        self.message = None
+        self.controls = None
+        self.ctx = None
+        self.lyrics_message = None
+        self.lyrics_lang = None
+        self.hash = None
+
+
 async def get_track(queue, parse=True):
     while queue:
         if isinstance(queue[0], wavelink.tracks.YouTubePlaylist):
@@ -232,47 +251,52 @@ async def player_terminate(player, players, history=False):
         players.pop(player.guild.id)
 
 
-async def message_auto_update(player):
-    idx = player.message.id
-    bad_req = 0
-    while player.message is not None and idx == player.message.id:
-        try:
-            view = PlayerView(player)
-            await player.message.edit(
-                embed=player_embed(player),
-                view=view
-            )
-            bad_req = 0
-        except (errors.NotFound, AttributeError):
-            player.message = None
-            return
-        except errors.HTTPException:
-            if bad_req >= 10:
+async def player_message(player: ExtPlayer, bot):
+    ctx = player.ctx
+    view = PlayerView(player)
+    msg = await ctx.send(embed=player_embed(player),
+                         view=view)
+    player.message = msg
+    bot.loop.create_task(message_auto_update(player, bot))
+
+
+async def respawn_player_body(player, ctx, bot):
+    player.ctx = ctx.channel
+    with contextlib.suppress(errors.NotFound, AttributeError):
+        await player.message.delete()
+    player.message = None
+    await player_message(player, bot)
+    if player.lyrics_message is not None:
+        with contextlib.suppress(errors.NotFound, AttributeError):
+            await player.lyrics_message.delete()
+        await init_lyrics(player, player.lyrics_lang, ctx, bot)
+
+
+async def message_auto_update(player, bot):
+    try:
+        idx = player.message.id
+        bad_req = 0
+        while player.message is not None and idx == player.message.id:
+            try:
+                view = PlayerView(player)
+                await player.message.edit(
+                    embed=player_embed(player),
+                    view=view
+                )
+                bad_req = 0
+            except errors.NotFound:
                 player.message = None
                 return
-            bad_req += 1
-        except Exception:
-            return
-        await asyncio.sleep(1)
-
-
-class ExtPlayer(wavelink.Player):
-    def __init__(self,
-                 client: Client = MISSING,
-                 channel: VoiceChannel = MISSING,
-                 *,
-                 node: Node = MISSING):
-        super().__init__(client, channel, node=node)
-        self.loop = False
-        self.related = False
-        self.queue = deque()
-        self.history = deque()
-        self.message = None
-        self.controls = None
-        self.ctx = None
-        self.lyrics_message = None
-        self.lyrics_lang = None
-        self.hash = None
+            except errors.HTTPException:
+                if bad_req >= 5:
+                    await respawn_player_body(player, player.ctx, bot)
+                    return
+                bad_req += 1
+            except Exception:
+                return
+            await asyncio.sleep(1)
+    finally:
+        print('message auto update stopped')
 
 
 def serialize_music(player: ExtPlayer):
@@ -399,7 +423,7 @@ async def init_lyrics(player: ExtPlayer, lang: str, ctx, bot):
     player.lyrics_lang = lang
     load_lyrics(player)
     player.lyrics_message = await ctx.send(embed=lyrics_embed(player))
-    bot.loop.create_task(lyrics_auto_update(player))
+    bot.loop.create_task(lyrics_auto_update(player, bot))
 
 
 def lyrics_embed(player):
@@ -453,7 +477,7 @@ def lyrics_embed(player):
     return embed
 
 
-async def lyrics_auto_update(player):
+async def lyrics_auto_update(player, bot):
     idx = player.lyrics_message.id
     bad_req = 0
     while player.lyrics_message is not None and idx == player.lyrics_message.id:
@@ -464,8 +488,8 @@ async def lyrics_auto_update(player):
             player.lyrics_message = None
             return
         except errors.HTTPException:
-            if bad_req >= 10:
-                player.lyrics_message = None
+            if bad_req >= 5:
+                await init_lyrics(player, player.lyrics_lang, player.ctx, bot)
                 return
             bad_req += 1
         except Exception:
@@ -723,7 +747,7 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
     async def on_wavelink_track_start(self, player: ExtPlayer, track: Track):
         player.hash = random.random()
         if player.message is None:
-            await self.player_message(player)
+            await player_message(player, self.bot)
 
     async def soft_destroy(self, player):
         h = player.hash
@@ -743,14 +767,6 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
         if not player.is_playing():
             self.bot.loop.create_task(self.soft_destroy(player))
         await play_next(player, track)
-
-    async def player_message(self, player: ExtPlayer):
-        ctx = player.ctx
-        view = PlayerView(player)
-        msg = await ctx.send(embed=player_embed(player),
-                             view=view)
-        player.message = msg
-        self.bot.loop.create_task(message_auto_update(player))
 
     async def update_server_player(self, ctx, vc):
         if not wavelink.NodePool.get_node().is_connected():
@@ -884,16 +900,8 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
             await ctx.send(embed=Embed(title="Nothing is playing", color=Colour.red()), delete_after=5)
         else:
             await ctx.send(embed=Embed(title="Player respawned", color=Colour.green()), delete_after=5)
-            player = self.players[server_id]
-            player.ctx = ctx.channel
-            with contextlib.suppress(errors.NotFound, AttributeError):
-                await player.message.delete()
-            player.message = None
-            await self.player_message(player)
-            if player.lyrics_message is not None:
-                with contextlib.suppress(errors.NotFound, AttributeError):
-                    await player.lyrics_message.delete()
-                await init_lyrics(player, player.lyrics_lang, ctx, self.bot)
+            await respawn_player_body(self.players[server_id], ctx, self.bot)
+
 
 
     @slash_command(name='save', description='Save (serialize) music player state in chat message')
