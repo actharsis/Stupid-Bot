@@ -264,6 +264,7 @@ class PixivCog(commands.Cog, name="Pixiv"):
             filename = f'SPOILER_{filename}'
         with BytesIO() as image_binary:
             img.save(image_binary, img.format)
+            print(image_binary.tell())
             image_binary.seek(0)
             file = File(fp=image_binary, filename=filename)
         if SAFETY and illust.sanity_level > 4 and not channel.nsfw:
@@ -279,22 +280,18 @@ class PixivCog(commands.Cog, name="Pixiv"):
         await send(illust, channel, file, filename, color, show_title)
 
     async def show_illust(self, api, illust_id, channel):
-        try:
-            illust = (await api.illust_detail(illust_id)).illust
-            await channel.send(embed=Embed(title=f'Fetching illustration {illust.title} in original quality...',
-                                           color=Colour.green()), delete_after=5.0)
-            if isinstance(channel, Interaction):
-                channel = channel.channel
-            if len(illust.meta_single_page) > 0:
-                url = illust.meta_single_page.original_image_url
-                await self.send_illust(api, illust, url, channel)
-            for idx, item in enumerate(illust.meta_pages):
-                url = item.image_urls.original
-                await self.send_illust(api, illust, url, channel, idx)
-            return True
-        except Exception:
-            await channel.send(embed=Embed(title='Fail', color=Colour.red()), delete_after=5.0)
-            return None
+        illust = (await api.illust_detail(illust_id)).illust
+        await channel.send(embed=Embed(title=f'Fetching illustration {illust.title} in original quality...',
+                                       color=Colour.green()), delete_after=5.0)
+        if isinstance(channel, Interaction):
+            channel = channel.channel
+        if len(illust.meta_single_page) > 0:
+            url = illust.meta_single_page.original_image_url
+            await self.send_illust(api, illust, url, channel)
+        for idx, item in enumerate(illust.meta_pages):
+            url = item.image_urls.original
+            await self.send_illust(api, illust, url, channel, idx)
+        return True
 
     def history_repeating(self, illust, channel):
         if channel.guild.id not in self.history:
@@ -650,13 +647,19 @@ class PixivCog(commands.Cog, name="Pixiv"):
                        description="Fixed date in format YYYY-MM-DD from which search will be initialized",
                        default=None,
                        required=False
+                   ),
+                   autocomplete: bool = SlashOption(
+                       description="Use autofill for the query (might override query text)",
+                       default=True,
+                       required=False
                    )):
         await ctx.response.defer()
         if ctx.channel.nsfw:
             max_sanity_level = 6
         api = self.get_api(ctx.guild.id)
-        with contextlib.suppress(Exception):
-            word = (await api.search_autocomplete(word)).tags[0].name
+        if autocomplete:
+            with contextlib.suppress(Exception):
+                word = (await api.search_autocomplete(word)).tags[0].name
         selected_date = date.random(period, date.current(), random.random())
         if date.is_valid(from_date):
             selected_date = from_date
