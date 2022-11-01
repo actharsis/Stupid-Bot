@@ -787,8 +787,9 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
         except Exception:
             await ctx.send(embed=Embed(title="Which voice channel?", color=Colour.green()), delete_after=10.0)
             return 0
+        channel = ctx.channel
         if self.players[server_id].ctx is None:
-            self.players[server_id].ctx = ctx
+            self.players[server_id].ctx = channel
         return 1
 
     @slash_command(name='spotify', description="Add playlist from Spotify")
