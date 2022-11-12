@@ -10,7 +10,7 @@ import emoji
 import modules.date as date
 import requests
 from collections import deque
-from config import PIXIV_SHOW_EMBED_ILLUST, PIXIV_HISTORY_SIZE, SAFETY, USE_SELENIUM
+from config import PIXIV_SHOW_EMBED_ILLUST, PIXIV_HISTORY_SIZE, PIXIV_DEFAULT_TOKEN, SAFETY, USE_SELENIUM
 from modules.pixiv_auth import refresh_token, selenium_login
 from nextcord import (Embed, File, Interaction, SlashOption, TextInputStyle,
                       slash_command, ui)
@@ -222,6 +222,7 @@ class PixivCog(commands.Cog, name="Pixiv"):
         self.history = {}
         self.bot.loop.create_task(self.load())
         self.delay = 1.5
+        self.default_api = None
 
     def save(self, channels=False, timers=False, tokens=False):
         if channels:
@@ -246,6 +247,11 @@ class PixivCog(commands.Cog, name="Pixiv"):
                 token = item["value"]
                 self.api[token] = BetterAppPixivAPI()
                 await self.api[token].login(refresh_token=token)
+            if PIXIV_DEFAULT_TOKEN is not None:
+                self.tokens["0"] = {"value": PIXIV_DEFAULT_TOKEN, "time": 0}
+                self.api[PIXIV_DEFAULT_TOKEN] = BetterAppPixivAPI()
+                await self.api[PIXIV_DEFAULT_TOKEN].login(refresh_token=PIXIV_DEFAULT_TOKEN)
+                self.default_api = self.api[PIXIV_DEFAULT_TOKEN]
 
     async def waited_download(self, api, url):
         req_time = await self.queues.get()
@@ -342,8 +348,7 @@ class PixivCog(commands.Cog, name="Pixiv"):
         server_id = str(server_id)
         if server_id in self.tokens:
             return self.api[self.tokens[server_id]['value']]
-        else:
-            return None
+        return self.default_api
 
     @slash_command(name="pixiv_logout", description="Remove pixiv token from bot db")
     async def pixiv_logout(self, ctx):
@@ -369,11 +374,15 @@ class PixivCog(commands.Cog, name="Pixiv"):
     @slash_command(name="pixiv_status", description="Show pixiv connection status")
     async def pixiv_status(self, ctx):
         await ctx.response.defer()
-        server = str(ctx.guild.id)
+        api = self.get_api(ctx.guild.id)
         try:
-            await self.api[self.tokens[server]['value']].trending_tags_illust()
-            embed = Embed(
-                title="You logged in and API is working fine", color=Colour.green())
+            await api.trending_tags_illust()
+            if ctx.guild.id in self.tokens:
+                embed = Embed(
+                    title="You logged in and API is working fine", color=Colour.green())
+            else:
+                embed = Embed(
+                    title="Your server using default API token and API is working fine", color=Colour.green())
         except Exception:
             embed = Embed(
                 title="Either you are not connected or there is a problem with the API", color=Colour.red())
