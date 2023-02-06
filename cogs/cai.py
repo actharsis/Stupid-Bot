@@ -97,7 +97,7 @@ class CharacterAICog(commands.Cog, name="CharacterAI"):
                            description="Character ID to use (Cirno ID by default)",
                            required=False,
                            default="2g4E4hPoSdUtcDpLUaGT3pEaEpUlubWdUadJbSlqdi0")):
-        await self.cai.continue_last_or_create_chat(character_id)
+        self.chat = await self.cai.continue_last_or_create_chat(character_id)
         embed = Embed(title="CAI:", description="Request called", color=Colour.blurple())
         await ctx.send(embed=embed, delete_after=5)
 
