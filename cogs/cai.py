@@ -1,10 +1,5 @@
-import asyncio
-import contextlib
-import json
-import random
-
 from config import CHARACTERAI_TOKEN
-from modules.cai_wrapper import CharacterAI, AIChat
+from modules.cai_wrapper import CharacterAI
 from nextcord import Embed, slash_command, SlashOption
 from nextcord.colour import Colour
 from nextcord.ext import commands
@@ -51,13 +46,16 @@ class CharacterAICog(commands.Cog, name="CharacterAI"):
         await ctx.channel.trigger_typing()
         text = ctx.clean_content
         ping = f'@{self.bot.user.name}'
+        cai_name = self.chat.character_data.get('name')
+        if cai_name is None:
+            cai_name = 'Cirno'
         if text.startswith(ping):
             text = text[len(ping):]
         else:
-            text = text.replace(ping, 'Cirno')  # TODO: should be replaced with proper bot name
+            text = text.replace(ping, cai_name)
         text = text.strip()
         if len(text) == 0:
-            text = 'Cirno'
+            text = cai_name
         webhook = None
         message = None
         user = ctx.author.nick
@@ -81,7 +79,7 @@ class CharacterAICog(commands.Cog, name="CharacterAI"):
     async def flush(self, ctx):
         await ctx.response.defer()
         # channel_id = str(ctx.guild.id)
-        self.chat = await self.cai.create_new_chat(self.cirno_id)
+        self.chat = await self.cai.create_new_chat(self.chat.character_id)
         embed = Embed(title="CAI:", description="Flush called", color=Colour.blurple())
         await ctx.send(embed=embed, delete_after=5)
 

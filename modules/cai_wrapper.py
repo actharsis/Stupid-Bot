@@ -75,34 +75,38 @@ class CharacterAI:
         body = {'external_id': character_id}
         return await self.post_query(url, body, True)
 
-    async def create_new_chat(self, character_id):
+    async def create_new_chat(self, character_id, load_char_data=True):
         body = {'character_external_id': character_id,
                 'history_external_id': None}
         url = 'https://beta.character.ai/chat/history/create/'
         data = await self.post_query(url, body, True)
-        return AIChat(self, character_id, data)
+        character_data = (await self.get_character_info(character_id)).get('character') if load_char_data else None
+        return AIChat(self, character_id, data, character_data)
 
-    async def continue_chat(self, character_id, history_id):
+    async def continue_chat(self, character_id, history_id, load_char_data=True):
         url = 'https://beta.character.ai/chat/history/continue/'
         body = {'character_external_id': character_id,
                 'history_external_id': history_id}
         data = await self.post_query(url, body, True)
-        return AIChat(self, character_id, data)
+        character_data = (await self.get_character_info(character_id)).get('character') if load_char_data else None
+        return AIChat(self, character_id, data, character_data)
 
-    async def continue_last_or_create_chat(self, character_id):
+    async def continue_last_or_create_chat(self, character_id, load_char_data=True):
         url = 'https://beta.character.ai/chat/history/continue/'
         body = {'character_external_id': character_id,
                 'history_external_id': None}
         data = await self.post_query(url, body, True)
-        if data.get('status') == 'No Such History':
+        if data is None:
             return await self.create_new_chat(character_id)
-        return AIChat(self, character_id, data)
+        character_data = (await self.get_character_info(character_id)).get('character') if load_char_data else None
+        return AIChat(self, character_id, data, character_data)
 
 
 class AIChat:
-    def __init__(self, client, character_id, continue_body):
+    def __init__(self, client, character_id, continue_body, character_data=None):
         self.client = client
         self.character_id = character_id
+        self.character_data = character_data
         self.external_id = continue_body.get('external_id')
         ai = next(filter(lambda participant: not participant['is_human'], continue_body['participants']))
         self.ai_id = ai['user']['username']
