@@ -63,18 +63,19 @@ class CharacterAICog(commands.Cog, name="CharacterAI"):
         user = ctx.author.nick
         if user is None:
             user = ctx.author.name
-        async for answer, cai_name, cai_avatar, final in self.chat.send_message(text):
-            answer = answer.replace(self.cai.user, user)
-            if webhook is None:
-                webhook = await ctx.channel.create_webhook(name=cai_name)
-                message = await webhook.send(answer, username=cai_name, avatar_url=cai_avatar, wait=True)
-            else:
-                await message.edit(content=answer)
-            if not final:
-                await ctx.channel.trigger_typing()
-        webhooks = await ctx.channel.webhooks()
-        for webhook in webhooks:
-            await webhook.delete()
+        try:
+            async for answer, cai_name, cai_avatar, final in self.chat.send_message(text):
+                answer = answer.replace(self.cai.user, user)
+                if webhook is None:
+                    webhook = await ctx.channel.create_webhook(name=cai_name)
+                    message = await webhook.send(answer, username=cai_name, avatar_url=cai_avatar, wait=True)
+                else:
+                    await message.edit(content=answer)
+                if not final:
+                    await ctx.channel.trigger_typing()
+        finally:
+            if webhook is not None:
+                await webhook.delete()
 
     @slash_command(name='flush')
     async def flush(self, ctx):

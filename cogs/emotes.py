@@ -73,11 +73,11 @@ class EmotesCog(commands.Cog, name="Emotes"):
         name = member.nick
         if name is None:
             name = member.name
-        webhook = await ctx.channel.create_webhook(name=name)
-        self.bot.loop.create_task(ctx.delete())
-        await webhook.send(str(message), username=name, avatar_url=member.avatar.url)
-        webhooks = await ctx.channel.webhooks()
-        for webhook in webhooks:
+        try:
+            webhook = await ctx.channel.create_webhook(name=name)
+            self.bot.loop.create_task(ctx.delete())
+            await webhook.send(str(message), username=name, avatar_url=member.avatar.url)
+        finally:
             await webhook.delete()
 
     def save(self, users=False, emoji=False):
