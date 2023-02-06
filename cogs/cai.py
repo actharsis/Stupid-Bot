@@ -81,11 +81,13 @@ class CharacterAICog(commands.Cog, name="CharacterAI"):
         await ctx.response.defer()
         # channel_id = str(ctx.guild.id)
         self.chat = await self.cai.create_new_chat(self.cirno_id)
+        embed = Embed(title="CAI:", description="Flush called", color=Colour.blurple())
+        await ctx.send(embed=embed, delete_after=5)
 
     @slash_command(name='relog')
     async def relog(self, ctx):
         await self.cai.authenticate(CHARACTERAI_TOKEN)
-        embed = Embed(title="CAI:", description="Request called", color=Colour.blurple())
+        embed = Embed(title="CAI:", description="Auth called", color=Colour.blurple())
         await ctx.send(embed=embed, delete_after=5)
 
     @slash_command(name='set_char')
