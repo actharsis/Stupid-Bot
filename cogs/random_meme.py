@@ -21,7 +21,7 @@ async def play_stuff(vc):
 class RandomMeme(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        bot.loop.create_task(self.connect_nodes())
+        self.bot.loop.create_task(self.connect_nodes())
 
     async def connect_nodes(self):
         await self.bot.wait_until_ready()
