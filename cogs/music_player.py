@@ -9,8 +9,8 @@ import random
 import re
 import string
 
-from config import *
 from collections import deque
+from config import *
 from cryptography.fernet import Fernet
 from modules import wavelink
 from modules.wavelink import Node, Track
@@ -24,6 +24,7 @@ from nextcord.colour import Colour
 from nextcord.ext import commands
 from nextcord.ui import Button, Select, View
 from os.path import exists
+from typing import List
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from youtube_transcript_api import YouTubeTranscriptApi
@@ -826,36 +827,45 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
         await play_next(player)
 
     @slash_command(name='play', description='Play a song from Youtube')
-    async def play(self, ctx,
+    async def play(self,
+                   interaction: Interaction,
                    track: str = SlashOption(description="Track name", required=True),
                    vc: GuildChannel = SlashOption(channel_types=[ChannelType.voice], default=None, required=False),
                    top: bool = SlashOption(description="Add song at the top of the queue", required=False)):
-        await ctx.response.defer()
-        if not await self.update_server_player(ctx, vc):
+        if not await self.update_server_player(interaction, vc):
             return
-        server_id = ctx.guild.id
+        server_id = interaction.guild.id
         player = self.players[server_id]
         queue = player.queue
         try:
             track = await wavelink.YouTubeTrack.search(query=track, return_first=True)
         except Exception:
-            await ctx.send(embed=Embed(title="Nothing found :(", color=Colour.dark_red()),
-                           delete_after=10.0)
+            await interaction.send(embed=Embed(title="Nothing found :(", color=Colour.dark_red()),
+                                   delete_after=10.0)
             return
         if top:
             queue.appendleft(track)
         else:
             queue.append(track)
         if player.is_playing():
-            await ctx.send(embed=Embed(title=f"Song '**{track.title}**' (*{short_time(track.length)}*) added to queue",
-                                       color=Colour.green()),
-                           delete_after=10.0)
+            await interaction.response.send_message(embed=Embed(title=f"Song '**{track.title}**' (*{short_time(track.length)}*) added to queue",
+                                                    color=Colour.green()),
+                                                    delete_after=10.0)
             return
         else:
-            await ctx.send(embed=Embed(title=f"Song '**{track.title}**' (*{short_time(track.length)}*) is now playing",
-                                       color=Colour.green()),
-                           delete_after=10.0)
+            await interaction.response.send_message(embed=Embed(title=f"Song '**{track.title}**' (*{short_time(track.length)}*) is now playing",
+                                                    color=Colour.green()),
+                                                    delete_after=10.0)
         await play_next(player)
+
+    @play.on_autocomplete("track")
+    async def load_tracklist(self, interaction: Interaction, query: str):
+        if not query:
+            await interaction.response.send_autocomplete([])
+            return
+        tracks = await wavelink.YouTubeTrack.search(query=query, return_first=False)
+        titles = list(map(lambda track: track.title, tracks))[:5]
+        await interaction.response.send_autocomplete(titles)
 
     @slash_command(name='playlist', description='Add playlist from Youtube')
     async def playlist(self, ctx,
