@@ -4,11 +4,12 @@ import re
 
 from config import CHARACTERAI_TOKEN
 from modules.cai_wrapper import CharacterAI
-from nextcord import Embed, slash_command, SlashOption
+from nextcord import Embed, MessageType, slash_command, SlashOption
 from nextcord.colour import Colour
 from nextcord.ext import commands
 
 DEFAULT_CHAR_ID = '2g4E4hPoSdUtcDpLUaGT3pEaEpUlubWdUadJbSlqdi0'
+
 
 class CharacterAICog(commands.Cog, name="CharacterAI"):
     """
@@ -17,7 +18,7 @@ class CharacterAICog(commands.Cog, name="CharacterAI"):
 
     ***Available commands***:
     **/flush** - don't even dare to use that!! Please... I don't want to forget what happened :(
-    **/relog** - reauthenticate in case I'm not responding
+    **/relog** - re-authenticate in case I'm not responding
     **/set_char** - give a character id to change character (Cirno if no argument given)
     """
 
@@ -78,38 +79,43 @@ class CharacterAICog(commands.Cog, name="CharacterAI"):
 
     @commands.Cog.listener()
     async def on_message(self, ctx):
-        if not self.bot.user.mentioned_in(ctx):
-            return
-        await ctx.channel.trigger_typing()
+        server_id = str(ctx.guild.id)
+        if self.bot.user.mentioned_in(ctx) or \
+                ctx.type == MessageType.reply and \
+                server_id in self.chats and \
+                ctx.reference.resolved.author.bot and \
+                ctx.reference.resolved.author.name == self.chats[server_id].character_data['name'] and \
+                ctx.reference.resolved.author.discriminator == '0000':
+            await ctx.channel.trigger_typing()
 
-        chat, webhook = await self.get_chat_and_webhook(ctx)
+            chat, webhook = await self.get_chat_and_webhook(ctx)
 
-        text = ctx.clean_content
-        ping = f'@{self.bot.user.name}'
-        cai_name = chat.character_data.get('name')
-        if cai_name is None:
-            cai_name = 'Cirno'
-        if text.startswith(ping):
-            text = text[len(ping):]
-        else:
-            text = text.replace(ping, cai_name)
-        text = text.strip()
-        if len(text) == 0:
-            text = cai_name
-
-        message = None
-        user = ctx.author.nick
-        if user is None:
-            user = ctx.author.name
-
-        async for answer, cai_name, cai_avatar, final in chat.send_message(text):
-            answer = re.sub(self.cai.user, user, answer, flags=re.IGNORECASE)
-            if message is None:
-                message = await webhook.send(answer, username=cai_name, avatar_url=cai_avatar, wait=True)
+            text = ctx.clean_content
+            ping = f'@{self.bot.user.name}'
+            cai_name = chat.character_data.get('name')
+            if cai_name is None:
+                cai_name = 'Cirno'
+            if text.startswith(ping):
+                text = text[len(ping):]
             else:
-                await message.edit(content=answer)
-            if not final:
-                await ctx.channel.trigger_typing()
+                text = text.replace(ping, cai_name)
+            text = text.strip()
+            if len(text) == 0:
+                text = cai_name
+
+            message = None
+            user = ctx.author.nick
+            if user is None:
+                user = ctx.author.name
+
+            async for answer, cai_name, cai_avatar, final in chat.send_message(text):
+                answer = re.sub(self.cai.user, user, answer, flags=re.IGNORECASE)
+                if message is None:
+                    message = await webhook.send(answer, username=cai_name, avatar_url=cai_avatar, wait=True)
+                else:
+                    await message.edit(content=answer)
+                if not final:
+                    await ctx.channel.trigger_typing()
 
     @slash_command(name='relog')
     async def relog(self, ctx):
