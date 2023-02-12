@@ -62,6 +62,7 @@ class CharacterAICog(commands.Cog, name="CharacterAI"):
         else:
             chat = await self.call_create_new_chat(ctx, DEFAULT_CHAR_ID)
 
+        webhook = None
         if server_id in self.webhooks:
             webhook = self.webhooks[server_id]
         elif data.get('webhook') is not None:
@@ -70,7 +71,7 @@ class CharacterAICog(commands.Cog, name="CharacterAI"):
             webhook = await ctx.guild.create_webhook(name='CAI webhook')
 
         if webhook.channel != ctx.channel:
-            await webhook.edit(reason="channel changed", channel=ctx.channel)
+            webhook = await webhook.edit(channel=ctx.channel)
 
         self.chats[server_id] = chat
         self.webhooks[server_id] = webhook
