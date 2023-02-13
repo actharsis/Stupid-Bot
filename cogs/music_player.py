@@ -954,7 +954,7 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
                     await message.channel.send(embed=Embed(title="Which voice channel?", color=Colour.green()),
                                                delete_after=10.0)
                     raise Exception('No voice chat')
-                await self.update_server_player(message.channel, user.voice.channel)
+                await self.update_server_player(message, user.voice.channel)
             self.players[server_id].queue = obj['queue']
             self.players[server_id].history = obj['history']
             if self.players[server_id].is_playing():
