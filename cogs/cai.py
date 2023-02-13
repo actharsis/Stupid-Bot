@@ -68,7 +68,7 @@ class CharacterAICog(commands.Cog, name="CharacterAI"):
         elif data.get('webhook') is not None:
             webhook = await self.bot.fetch_webhook(int(data['webhook']))
         if webhook is None:
-            webhook = await ctx.guild.create_webhook(name='CAI webhook')
+            webhook = await ctx.channel.create_webhook(name='CAI webhook')
 
         if webhook.channel != ctx.channel:
             webhook = await webhook.edit(channel=ctx.channel)
