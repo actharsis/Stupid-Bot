@@ -138,7 +138,7 @@ class CharacterAICog(commands.Cog, name="CharacterAI"):
             if history_id is None:
                 chat = await self.call_create_new_chat(ctx, character_id)
             else:
-                chat = await self.cai.continue_chat(ctx, character_id, history_id)
+                chat = await self.cai.continue_chat(character_id, history_id)
 
         self.cai_data[server_id]['chat'] = {'char_id': chat.character_id, 'hist_id': chat.external_id}
         self.chats[server_id] = chat
