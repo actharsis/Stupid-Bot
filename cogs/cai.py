@@ -84,7 +84,8 @@ class CharacterAICog(commands.Cog, name="CharacterAI"):
     @commands.Cog.listener()
     async def on_message(self, ctx):
         server_id = str(ctx.guild.id)
-        if self.bot.user.mentioned_in(ctx) or \
+        if self.bot.user.mentioned_in(ctx) and \
+                not ctx.mention_everyone or \
                 ctx.type == MessageType.reply and \
                 server_id in self.chats and \
                 ctx.reference.resolved.author.bot and \
