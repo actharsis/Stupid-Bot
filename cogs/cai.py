@@ -2,9 +2,11 @@ import contextlib
 import json
 import re
 
+import nextcord
+
 from config import CHARACTERAI_TOKEN
 from modules.cai_wrapper import CharacterAI
-from nextcord import Embed, MessageType, slash_command, SlashOption
+from nextcord import Embed, Message, MessageType, slash_command, SlashOption
 from nextcord.colour import Colour
 from nextcord.ext import commands
 
@@ -32,8 +34,8 @@ class CharacterAICog(commands.Cog, name="CharacterAI"):
         self.load()
 
     async def auth(self):
-        self.cai = CharacterAI()
-        await self.cai.authenticate(CHARACTERAI_TOKEN)
+        self.cai = CharacterAI(CHARACTERAI_TOKEN)
+        await self.cai.start()
 
     def save(self):
         with open('json/cai_data.json', 'w') as file:
@@ -82,7 +84,7 @@ class CharacterAICog(commands.Cog, name="CharacterAI"):
         return chat, webhook
 
     @commands.Cog.listener()
-    async def on_message(self, ctx):
+    async def on_message(self, ctx: nextcord.Message):
         server_id = str(ctx.guild.id)
         if self.bot.user.mentioned_in(ctx) and \
                 not ctx.mention_everyone or \
@@ -96,7 +98,8 @@ class CharacterAICog(commands.Cog, name="CharacterAI"):
             chat, webhook = await self.get_chat_and_webhook(ctx)
 
             text = ctx.clean_content
-            ping = f'@{self.bot.user.name}'
+            bot = ctx.guild.get_member(self.bot.user.id)
+            ping = f'@{bot.nick if bot.nick else bot.name}'
             cai_name = chat.character_data.get('name')
             if cai_name is None:
                 cai_name = 'Cirno'
@@ -109,9 +112,7 @@ class CharacterAICog(commands.Cog, name="CharacterAI"):
                 text = cai_name
 
             message = None
-            user = ctx.author.nick
-            if user is None:
-                user = ctx.author.name
+            user = ctx.author.nick if ctx.author.nick else ctx.author.name
 
             async for answer, cai_name, cai_avatar, final in chat.send_message(text):
                 answer = re.sub(self.cai.user, user, answer, flags=re.IGNORECASE)
@@ -119,14 +120,14 @@ class CharacterAICog(commands.Cog, name="CharacterAI"):
                     message = await webhook.send(answer, username=cai_name, avatar_url=cai_avatar, wait=True)
                 else:
                     await message.edit(content=answer)
-                if not final:
-                    await ctx.channel.trigger_typing()
+                # if not final:
+                #     await ctx.channel.trigger_typing()
 
-    @slash_command(name='relog')
-    async def relog(self, ctx):
-        await self.cai.authenticate(CHARACTERAI_TOKEN)
-        embed = Embed(title="CAI:", description="Auth called", color=Colour.blurple())
-        await ctx.send(embed=embed, delete_after=5)
+    # @slash_command(name='relog')
+    # async def relog(self, ctx):
+    #     await self.cai.authenticate(CHARACTERAI_TOKEN)
+    #     embed = Embed(title="CAI:", description="Auth called", color=Colour.blurple())
+    #     await ctx.send(embed=embed, delete_after=5)
 
     async def update_chat(self, ctx, character_id=None, history_id=None):
         server_id = str(ctx.guild.id)
