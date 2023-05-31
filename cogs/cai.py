@@ -4,7 +4,7 @@ import re
 
 import nextcord
 
-from config import CHARACTERAI_TOKEN
+from config import CHARACTERAI_TOKEN, CAI_NO_MESSAGE_EDIT
 from modules.cai_wrapper import CharacterAI
 from nextcord import Embed, Message, MessageType, slash_command, SlashOption
 from nextcord.colour import Colour
@@ -115,6 +115,8 @@ class CharacterAICog(commands.Cog, name="CharacterAI"):
             user = ctx.author.nick if ctx.author.nick else ctx.author.name
 
             async for answer, cai_name, cai_avatar, final in chat.send_message(text):
+                if CAI_NO_MESSAGE_EDIT and not final:
+                    continue
                 answer = re.sub(self.cai.user, user, answer, flags=re.IGNORECASE)
                 if message is None:
                     message = await webhook.send(answer, username=cai_name, avatar_url=cai_avatar, wait=True)
