@@ -17,31 +17,6 @@ start_time.isoformat(sep='T')
 
 history = {}
 
-very_clever_quotes = None
-with open(constants.CLEVER_QUOTES_DIR, encoding='utf-8') as file:
-    very_clever_quotes = file.read().split(";")
-
-replies = None
-with open(constants.REPLIES_DIR, encoding="utf-8") as f:
-    lines = f.read().splitlines()
-if len(lines) > 0:
-    pairs = [l.split('//')[1].split('->') for l in lines]
-    for p in pairs:
-        p[1] = p[1].split(";")
-    replies = {int(p[0]): p[1] for p in pairs}
-
-
-def get_special_replies(author_id):
-    return replies[author_id] if author_id in replies else []
-
-
-async def random_vot_da(ctx):
-    if random.random() < 0.01:
-        await ctx.channel.send('вот да')
-    elif random.random() < 0.005:
-        await ctx.channel.send(random.choice(very_clever_quotes))
-
-
 async def cringe(ctx):
     if random.random() >= 0.005 and ctx.clean_content[:5] != 'balab':
         return
@@ -87,14 +62,6 @@ async def reference_reaction(ctx, client):
     if not ctx.reference or ctx.reference.resolved.author.id != client.user.id or ctx.author.id == client.user.id:
         return
 
-    if replies:
-        if special_replies := get_special_replies(ctx.author.id):
-            special_reply = random.choice(special_replies)
-            reply = f"{special_reply[1:]}" if special_reply.startswith("&") or special_reply.startswith("№")\
-                else f"{ctx.author.mention}, {special_reply}"
-
-            await ctx.channel.send(reply)
-
 
 class MiscCog(commands.Cog):
     def __init__(self, bot):
@@ -107,7 +74,7 @@ class MiscCog(commands.Cog):
         if ctx.author.id == self.client.user.id:
             return
 
-        stupid_things = [random_vot_da, cringe, random_emote]
+        stupid_things = [cringe, random_emote]
         await reference_reaction(ctx, self.client)
         await message_repeating(ctx)
         await random.choice(stupid_things)(ctx)
