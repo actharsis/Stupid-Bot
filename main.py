@@ -1,7 +1,12 @@
 import nextcord
+from modules import logger as log
+import logging
 from nextcord.ext import commands
 
 from config import TOKEN
+
+log.init_logger()
+logger = logging.getLogger(__name__)
 
 # client init
 intents = nextcord.Intents.all()
@@ -16,5 +21,7 @@ extensions = ['cogs.pixiv', 'cogs.pidor', 'cogs.emotes',
 
 for extension in extensions:
     client.load_extension(extension)
+
+logger.info('Cogs initialized.')
 
 client.run(TOKEN)
