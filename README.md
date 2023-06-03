@@ -1,10 +1,6 @@
 # TabaBot
 ## Overview
-TabaBot - another random bot. Main idea is message analysis: give some interesting info based on user's activity. Also there are music features, random trash commands and sending random phrases to chat.
-
-`clever_quotes.txt` consists of phrases that bot can randomly send to chat. Each phrase separated by `;` symbol.
-
-`replies.txt` contains phrases that bot can reply to specific user. Users separated by `\n`. User ID starts after `//` and separated from quotes by `->`. Phrases separated can be separated by `;` for quote with ping. `;№` and `;&` separate phrases without ping.
+TabaBot - another random bot. Main idea is message analysis: give some interesting info based on user's activity. Also there are music features and random trash commands.
 
 In `config.py` you can specify your token and some additional options.
 
