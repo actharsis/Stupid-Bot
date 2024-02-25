@@ -7,7 +7,6 @@ from nextcord import Embed, slash_command
 from nextcord.ext import commands
 import git
 import pymongo
-import constants
 from config import DB_ADDRESS, DB_NAME
 from modules.message_analysis import AnalysisModule
 
@@ -43,21 +42,6 @@ async def random_emote(ctx):
         await ctx.add_reaction(random.choice(ctx.guild.emojis))
 
 
-async def message_repeating(ctx):
-    if ctx.channel.id in history and ctx.content != '':
-        if history[ctx.channel.id]['text'] == ctx.content:
-            history[ctx.channel.id]['count'] += 1
-            if history[ctx.channel.id]['count'] == constants.MESSAGES_TO_REPEAT:
-                await ctx.channel.send(history[ctx.channel.id]['text'])
-                history[ctx.channel.id]['text'] = ''
-                history[ctx.channel.id]['count'] = 0
-        else:
-            history[ctx.channel.id]['text'] = ctx.content
-            history[ctx.channel.id]['count'] = 1
-    else:
-        history[ctx.channel.id] = {'text': ctx.content, 'count': 1}
-
-
 async def reference_reaction(ctx, client):
     if not ctx.reference or ctx.reference.resolved.author.id != client.user.id or ctx.author.id == client.user.id:
         return
@@ -76,7 +60,6 @@ class MiscCog(commands.Cog):
 
         stupid_things = [cringe, random_emote]
         await reference_reaction(ctx, self.client)
-        await message_repeating(ctx)
         await random.choice(stupid_things)(ctx)
 
         await self.client.process_commands(ctx)

@@ -20,3 +20,5 @@ YOUTUBE_API_TOKEN = ''
 
 CHARACTERAI_TOKEN = ''
 CAI_NO_MESSAGE_EDIT = False
+
+PATH_TO_GPT_COOKIES = 'chat.openai.com.cookies.json'

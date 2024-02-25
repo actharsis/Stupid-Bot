@@ -1,2 +1,0 @@
-DATABASE_DIR = 'db/TabaBotDB.db'
-MESSAGES_TO_REPEAT = 3
