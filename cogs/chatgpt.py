@@ -2,7 +2,7 @@ import logging
 import nextcord
 from nextcord import Colour, Embed, SlashOption, ChannelType, slash_command
 from nextcord.ext import commands
-from WebChatGPT import ChatGPT
+from modules.webchatgpt import ChatGPT
 
 from config import PATH_TO_GPT_COOKIES
 
@@ -15,8 +15,12 @@ class ChatGPTCog(commands.Cog, name="Chat"):
         self.gpt = ChatGPT(PATH_TO_GPT_COOKIES)
         logger.info('GPT api is fine')
 
+    def pick_last_markdown_type(self, text):
+        pos = text.rfind('```')
+        return text[pos:].split()[0] + '\n'
+
     def nice_cut(self, chunk: str) -> [str, bool]:
-        markdown = False
+        markdown = ""
         last_line_pos = chunk.rfind('\n')
         last_word_pos = chunk.rfind(' ')
         if len(chunk) - last_line_pos < 200:
@@ -24,8 +28,8 @@ class ChatGPTCog(commands.Cog, name="Chat"):
         elif len(chunk) - last_word_pos < 200:
             chunk = chunk[:last_word_pos]
         if chunk.count('```') % 2 == 1:
+            markdown = self.pick_last_markdown_type(chunk)
             chunk += '```'
-            markdown = True
         return chunk, markdown
 
     def pagify(self, message: str) -> list:
@@ -33,22 +37,23 @@ class ChatGPTCog(commands.Cog, name="Chat"):
         while len(message) >= 2000:
             page, markdown = self.nice_cut(message[:1990])
             pages.append(page)
-            message = "```" if markdown else "" + message[len(page):]
+            message = f"{markdown}{message[len(page):]}"
         pages.append(message)
         return pages
 
     async def gpt_request(self, thread, prompt):
         await thread.trigger_typing()
+
         message = None
-        current_page_index = None
-        for response in self.gpt.ask(prompt, stream=True):
+        current_page_index = -1
+        async for response in self.gpt.ask(prompt):
             if response["error"] is None:
                 content = response["message"]["content"]["parts"][0]
                 pages = self.pagify(content)
                 if message:
                     await message.edit(content=pages[current_page_index])
-                if current_page_index != len(pages) - 1:
-                    current_page_index = len(pages) - 1
+                if current_page_index < len(pages) - 1:
+                    current_page_index += 1
                     message = await thread.send(pages[current_page_index])
             else:
                 logger.error(response["error"])

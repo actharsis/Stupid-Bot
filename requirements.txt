@@ -3,7 +3,6 @@ emoji>=2.10.1
 aiohttp>=3.8.5
 requests>=2.23.0
 pillow>=10.2.0
-webchatgpt>=0.2.9
 cryptography>=42.0.5
 websocket-client>=1.7.0
 yarl>=1.9.4

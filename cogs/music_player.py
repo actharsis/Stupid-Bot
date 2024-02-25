@@ -24,7 +24,6 @@ from nextcord.colour import Colour
 from nextcord.ext import commands
 from nextcord.ui import Button, Select, View
 from os.path import exists
-from typing import List
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from youtube_transcript_api import YouTubeTranscriptApi
