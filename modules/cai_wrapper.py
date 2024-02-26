@@ -173,13 +173,9 @@ async def data_stream_parse(download):
     async for chunk in download.follow_stream():
         chunk = base64.b64decode(chunk)
         data += chunk
-        while True:
-            end = data.find(b'\n')
-            if end == -1:
-                break
-            end = len(data) - end
-            yield json.loads(data[:-end].decode().strip())
-            data = data[-(end - 1):]
+    for res in data.split(b'\n'):
+        if len(res) > 0:
+            yield json.loads(res)
 
 
 class AIChat:
