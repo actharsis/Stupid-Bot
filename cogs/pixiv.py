@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import json
 import os
+import logging
 import random
 import time
 from io import BytesIO
@@ -18,6 +19,8 @@ from nextcord.colour import Colour
 from nextcord.ext import commands
 from PIL import Image
 from pixivpy_async import AppPixivAPI
+
+log = logging.getLogger(__name__)
 
 
 class BetterAppPixivAPI(AppPixivAPI):
@@ -270,7 +273,7 @@ class PixivCog(commands.Cog, name="Pixiv"):
             filename = f'SPOILER_{filename}'
         with BytesIO() as image_binary:
             img.save(image_binary, img.format)
-            print(image_binary.tell())
+            log.debug(image_binary.tell())
             image_binary.seek(0)
             file = File(fp=image_binary, filename=filename)
         if SAFETY and illust.sanity_level > 4 and not channel.nsfw:
@@ -823,7 +826,7 @@ class PixivCog(commands.Cog, name="Pixiv"):
                 token, ttl = refresh_token(self.tokens[server_id]['value'])
                 self.tokens[server_id]['time'] = str(int(timestamp + ttl))
                 await self.api[token].login(refresh_token=token)
-                print('pixiv token updated')
+                log.info('pixiv token updated')
 
     @commands.Cog.listener()
     async def on_ready(self):

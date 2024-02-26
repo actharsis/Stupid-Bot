@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import asyncio
 import json
+import logging
 import re
 from base64 import urlsafe_b64encode
 from hashlib import sha256
@@ -18,6 +19,8 @@ if USE_SELENIUM:
     from selenium.webdriver.common.desired_capabilities import \
         DesiredCapabilities
     from webdriver_manager.chrome import ChromeDriverManager
+
+log = logging.getLogger(__name__)
 
 # To get first refresh token use script from this link:
 # https://gist.github.com/ZipFile/c9ebedb224406f4f11845ab700124362
@@ -55,7 +58,7 @@ def refresh_token(refresh_token):
         refresh_token = data["refresh_token"]
         ttl = data.get("expires_in", 0)
     except KeyError:
-        print("unable to get pixiv refresh token!")
+        log.error("Unable to get pixiv refresh token!")
     return refresh_token, ttl
 
 

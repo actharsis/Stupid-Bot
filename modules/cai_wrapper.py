@@ -2,6 +2,7 @@ import asyncio
 import random
 import typing
 import json
+import logging
 import base64
 import re
 from queue import Queue
@@ -10,6 +11,8 @@ from playwright.async_api._context_manager import PlaywrightContextManager as As
 from playwright.async_api._generated import Playwright
 from playwright.async_api import Browser, Page, Response, Error
 from playwright_stealth import stealth_async
+
+log = logging.getLogger(__name__)
 
 
 class RequestPatcher:
@@ -66,7 +69,7 @@ class CharacterAI:
         userdata = await self.get_user()
         self.user = userdata['user']['name']
         self.loading_state = False
-        print('Character AI started')
+        log.info('Character AI started')
 
     async def open_cai_page(self):
         response = await self.page.goto("https://beta.character.ai/search?")
@@ -84,15 +87,15 @@ class CharacterAI:
             match = re.search(pattern, content)
             if match:
                 value = int(match.group(1))
-                print(f'Cloudflare queue for {value} minute(s)')
+                log.info(f'Cloudflare queue for {value} minute(s)')
             else:
-                print("In queue forever? Tough")
+                log.error("In queue forever? Tough")
             await asyncio.sleep(random.randint(20, 40))
             response = await self.page.reload()
 
     async def request_get(self, url: str, content_type: str = 'application/json'):
         if self.loading_state:
-            print('cant do request GET in loading state')
+            log.info('cant do request GET in loading state')
             return
         page = await self.browser.new_page()
         await stealth_async(page)
@@ -106,7 +109,7 @@ class CharacterAI:
 
     async def request_post(self, url: str, data=None, content_type: str = 'application/json'):
         if self.loading_state:
-            print('cant do request POST in loading state')
+            log.info('cant do request POST in loading state')
             return
         page = await self.browser.new_page()
         await stealth_async(page)
@@ -194,7 +197,7 @@ class AIChat:
                 break
             await asyncio.sleep(5)
         if self.client.loading_state:
-            print('cant do request POST (send message) in loading state')
+            log.error('cant do request POST (send message) in loading state')
             return
         data = {
             "history_external_id": self.external_id,

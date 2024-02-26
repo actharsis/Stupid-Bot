@@ -1,5 +1,6 @@
 #!/usr/bin/python
 import asyncio
+import logging
 
 import requests
 from . import utils
@@ -11,6 +12,8 @@ from base64 import b64decode
 from .errors import WebSocketError
 from threading import Thread as thr
 import uuid
+
+log = logging.getLogger(__name__)
 
 
 class Websocket:
@@ -263,7 +266,7 @@ class ChatGPT:
             self.response_chunks.pop(socket_uid)
             self.response_raw_chunks.pop(socket_uid)
             if last_message_status == "finished_successfully":
-                print('gpt ask finished gracefully')
+                log.debug('gpt ask finished gracefully')
                 break
 
     def user_details(self, in_details: bool = True) -> dict:

@@ -17,7 +17,7 @@ client = commands.AutoShardedBot(command_prefix='$', case_insensitive=True,
 
 extensions = ['cogs.pixiv', 'cogs.pidor', 'cogs.emotes',
               'cogs.music_player', 'cogs.anime', 'cogs.help',
-              'cogs.cai', 'cogs.chatgpt']
+              'cogs.cai']
 
 for extension in extensions:
     client.load_extension(extension)

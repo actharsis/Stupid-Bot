@@ -1,16 +1,19 @@
 import contextlib
 import json
 import re
+import logging
 
 import nextcord
 
 from config import CHARACTERAI_TOKEN, CAI_NO_MESSAGE_EDIT
 from modules.cai_wrapper import CharacterAI
-from nextcord import Embed, Message, MessageType, slash_command, SlashOption
+from nextcord import Embed, MessageType, slash_command, SlashOption
 from nextcord.colour import Colour
 from nextcord.ext import commands
 
 DEFAULT_CHAR_ID = '2g4E4hPoSdUtcDpLUaGT3pEaEpUlubWdUadJbSlqdi0'
+
+log = logging.getLogger(__name__)
 
 
 class CharacterAICog(commands.Cog, name="CharacterAI"):
@@ -36,6 +39,7 @@ class CharacterAICog(commands.Cog, name="CharacterAI"):
     async def auth(self):
         self.cai = CharacterAI(CHARACTERAI_TOKEN)
         await self.cai.start()
+        log.info('CAI api is fine')
 
     def save(self):
         with open('json/cai_data.json', 'w') as file:

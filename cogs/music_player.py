@@ -3,6 +3,7 @@ import contextlib
 import emoji
 import io
 import json
+import logging
 import math
 import pickle
 import random
@@ -31,6 +32,8 @@ from youtube_transcript_api import YouTubeTranscriptApi
 if SAFETY:
     from modules.predict import is_nsfw
 
+log = logging.getLogger(__name__)
+
 
 async def anext(ait, parse=True):
     if parse:
@@ -42,7 +45,7 @@ async def anext(ait, parse=True):
 
 def my_shuffle(x, s):
     x[s:] = random.sample(x[s:], len(x[s:]))
-    print(x)
+    log.debug(x)
 
 
 def time_to_str(time):
@@ -296,7 +299,7 @@ async def message_auto_update(player, bot):
                 return
             await asyncio.sleep(1)
     finally:
-        print('message auto update stopped')
+        log.info('music_player message auto update stopped')
 
 
 def serialize_music(player: ExtPlayer):
@@ -741,7 +744,7 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
 
     @commands.Cog.listener()
     async def on_wavelink_node_ready(self, node: Node):
-        print("Connected to lavalink!")
+        log.info("Connected to lavalink! Music Player api is fine")
 
     @commands.Cog.listener()
     async def on_wavelink_track_start(self, player: ExtPlayer, track: Track):
