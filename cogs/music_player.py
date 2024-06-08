@@ -2,7 +2,6 @@ import asyncio
 import contextlib
 import emoji
 import io
-import json
 import logging
 import math
 import pickle
@@ -13,14 +12,10 @@ import string
 from collections import deque
 
 import nextcord
+from lavalink import Node
 
 from config import *
 from cryptography.fernet import Fernet
-from enum import Enum
-from modules import wavelink
-from modules.wavelink import Node, Track
-from modules.wavelink.ext import spotify
-from modules.wavelink.utils import MISSING
 from nextcord import (ButtonStyle, ChannelType, Client, Embed, Interaction, File,
                       SelectOption, SlashOption, errors, slash_command)
 from nextcord.abc import GuildChannel
@@ -33,30 +28,26 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from youtube_transcript_api import YouTubeTranscriptApi
 
+import lavalink
+
+from lavalink.events import TrackStartEvent, QueueEndEvent, TrackEndEvent, NodeConnectedEvent
+from lavalink.errors import ClientError
+from lavalink.filters import LowPass
+from lavalink.server import LoadType
+
 if SAFETY:
     from modules.predict import is_nsfw
 
 log = logging.getLogger(__name__)
 
 
-async def anext(ait, parse=True):
-    if parse:
-        return await ait.__anext__()
-    else:
-        await ait.__skipanext__()
-        return None
-
-
-def my_shuffle(x, s):
-    x[s:] = random.sample(x[s:], len(x[s:]))
-    log.debug(x)
-
-
-def time_to_str(time):
+def time_to_str(time_ms):
+    time = round(time_ms / 1000)
     return f"{int(time // 60)} minutes, {int(time % 60)} seconds"
 
 
-def short_time(time):
+def short_time(time_ms):
+    time = round(time_ms / 1000)
     return f"{int(time // 60):02d}:{int(time % 60):02d}"
 
 
@@ -71,61 +62,132 @@ def cut_text(text, limit):
     return f"{text[:limit]}..." if len(text) > limit else text
 
 
-# class syntax
-class Loop(Enum):
-    DISABLED = 0
-    HISTORY = 1
-    SONG = 2
-
-
-class ExtPlayer(wavelink.Player):
-    loop: Loop
-    related: bool
-    queue: deque
+class ExtPlayer(lavalink.DefaultPlayer):
     history: deque
     message: nextcord.Message | None
     lyrics_message: nextcord.Message | None
     lyrics_lang: str | None
-    hash: float
-    track: wavelink.Track
 
-    def __init__(self,
-                 client: Client = MISSING,
-                 channel: VoiceChannel = MISSING,
-                 *,
-                 node: Node = MISSING):
-        super().__init__(client, channel, node=node)
-        self.loop = Loop.DISABLED
-        self.related = False
-        self.queue = deque()
-        self.history = deque()
+    def __init__(self, guild_id: int, node: 'Node'):
+        super().__init__(guild_id, node)
+        self.bot = None
         self.message = None
         self.ctx = None
+        self.history = deque()
+        self.moving_backwards = False
+
+        self.lyrics = None
         self.lyrics_message = None
         self.lyrics_lang = None
-        self.hash = random.random()
+
+    async def destroy(self):
+        with contextlib.suppress(Exception):
+            await self.lyrics_message.delete()
+        with contextlib.suppress(Exception):
+            await self.message.delete()
+        with contextlib.suppress(Exception):
+            await self.ctx.send(embed=build_history_embed(self, "Songs played during the session:"))
+        with contextlib.suppress(Exception):
+            guild = self.bot.get_guild(self.guild_id)
+            await guild.voice_client.disconnect(force=True)
+        await self.client.player_manager.destroy(self.guild_id)
 
 
-async def get_track(queue: deque, parse=True):
-    while queue:
-        if isinstance(queue[0], wavelink.tracks.YouTubePlaylist):
-            playlist = queue[0]
-            if playlist.selected_track >= len(playlist.tracks):
-                queue.popleft()
-                continue
-            track = playlist.tracks[playlist.selected_track]
-            playlist.selected_track += 1
-            if playlist.selected_track == len(playlist.tracks):
-                queue.popleft()
-        elif isinstance(queue[0], spotify.SpotifyAsyncIterator):
-            try:
-                playlist = queue[0]
-                track = await anext(playlist, parse)
-            except StopAsyncIteration:
-                queue.popleft()
-                continue
+class LavalinkVoice(nextcord.VoiceProtocol):
+    def __init__(self, client: Client, channel: VoiceChannel):
+        super().__init__(client, channel)
+        self.client = client
+        self.channel = channel
+        self.guild_id = channel.guild.id
+        self._destroyed = False
+
+        if not hasattr(self.client, 'lavalink'):
+            self.client.lavalink = lavalink.Client(client.user.id)
+            self.client.lavalink.add_node(host=LAVALINK_HOST, port=LAVALINK_PORT, password=LAVALINK_PASSWORD,
+                                          region='eu', name='local-node')
+
+        self.lavalink = self.client.lavalink
+
+    async def on_voice_server_update(self, data):
+        # the data needs to be transformed before being handed down to
+        # voice_update_handler
+        lavalink_data = {
+            't': 'VOICE_SERVER_UPDATE',
+            'd': data
+        }
+        await self.lavalink.voice_update_handler(lavalink_data)
+
+    async def on_voice_state_update(self, data):
+        channel_id = data['channel_id']
+
+        if not channel_id:
+            await self._destroy()
+            return
+
+        self.channel = self.client.get_channel(int(channel_id))
+
+        # the data needs to be transformed before being handed down to
+        # voice_update_handler
+        lavalink_data = {
+            't': 'VOICE_STATE_UPDATE',
+            'd': data
+        }
+
+        await self.lavalink.voice_update_handler(lavalink_data)
+
+    async def connect(self, *, timeout: float, reconnect: bool, self_deaf: bool = False,
+                      self_mute: bool = False) -> None:
+        """
+        Connect the bot to the voice channel and create a player_manager
+        if it doesn't exist yet.
+        """
+        # ensure there is a player_manager when creating a new voice_client
+        self.lavalink.player_manager.create(guild_id=self.channel.guild.id)
+        await self.channel.guild.change_voice_state(channel=self.channel, self_mute=self_mute, self_deaf=self_deaf)
+
+    async def disconnect(self, *, force: bool = False) -> None:
+        """
+        Handles the disconnect.
+        Cleans up running player and leaves the voice client.
+        """
+        player = self.lavalink.player_manager.get(self.channel.guild.id)
+
+        # no need to disconnect if we are not connected
+        if not force and not player.is_connected:
+            return
+
+        # None means disconnect
+        await self.channel.guild.change_voice_state(channel=None)
+
+        # update the channel_id of the player to None
+        # this must be done because the on_voice_state_update that would set channel_id
+        # to None doesn't get dispatched after the disconnect
+        player.channel_id = None
+        await self._destroy()
+
+    async def _destroy(self):
+        self.cleanup()
+
+        if self._destroyed:
+            # Idempotency handling, if `disconnect()` is called, the changed voice state
+            # could cause this to run a second time.
+            return
+
+        self._destroyed = True
+
+        try:
+            await self.lavalink.player_manager.destroy(self.guild_id)
+        except ClientError:
+            pass
+
+
+async def get_track(player: ExtPlayer):
+    while player.queue:
+        track = player.queue.pop(0)
+        if player.history and len(player.history) > 0 and player.history[-1]['track'].title == track.title:
+            player.history[-1]['cnt'] += 1
         else:
-            track = queue.popleft()
+            player.history.append({'track': track, 'cnt': 1})
         return track
     return None
 
@@ -136,27 +198,7 @@ def build_queue_embed(player: ExtPlayer):
     else:
         text = ""
         for i, item in enumerate(player.queue):
-            if isinstance(item, wavelink.tracks.YouTubePlaylist):
-                text += f"*{i}*. Playlist '**{item.name}**'\n"
-                j = 0
-                while j + item.selected_track < len(item.tracks) and j < 10:
-                    idx = item.selected_track + j
-                    track = item.tracks[idx]
-                    text += f"--->{i}.{idx}. [**{track.title}**]({track.uri}), length: {int(track.length)} sec.\n"
-                    j += 1
-                if j + item.selected_track < len(item.tracks):
-                    text += "...\n"
-            elif isinstance(item, spotify.SpotifyAsyncIterator):
-                text += f"*{i}*. '**{item.name}**'\n"
-                idx = 0
-                while idx < len(item.tracks) and idx < 10:
-                    track = item.tracks[idx]
-                    text += f"--->{i}.{idx}. {track['name']} - {track['artists'][0]['name']}'\n"
-                    idx += 1
-                if idx + item.selected_track < len(item.tracks):
-                    text += "...\n"
-            else:
-                text += f"*{i}*. [**{item.title}**]({item.uri}), length: {int(item.length)} sec.\n"
+            text += f"*{i}*. [**{item.title}**]({item.uri}), length: {round(item.duration / 1000)} sec.\n"
             text += '\n'
             if len(text) > 3000:
                 break
@@ -172,7 +214,7 @@ def build_history_embed(player: ExtPlayer, title: str):
     else:
         for i, item in enumerate(player.history):
             text += f"*{i}*. [**{item['track'].title}**]({item['track'].uri}), " \
-                    f"length: *{short_time(item['track'].length)}*"
+                    f"length: *{short_time(item['track'].duration)}*"
             if item['cnt'] > 1:
                 text += f", **{item['cnt']}**x"
             text += '\n\n'
@@ -184,22 +226,22 @@ def build_history_embed(player: ExtPlayer, title: str):
 
 
 def player_embed(player: ExtPlayer):
-    track = player.track
+    track = player.current
     options = []
-    if player.loop == Loop.SONG:
+    if player.loop == player.LOOP_SINGLE:
         options.append('*On song repeat*')
-    if player.loop == Loop.HISTORY:
-        options.append('*On history repeat*')
-    if player.related:
-        options.append('*Plays related*')
+    if player.loop == player.LOOP_QUEUE:
+        options.append('*On queue repeat*')
+    if player.shuffle:
+        options.append('*On shuffle*')
     if track is not None:
         embed = Embed(description=f"[**{track.title}**]({track.uri})\n"
-                                  f"**Length**: *{time_to_str(track.length)}*; **Volume**: *{int(player.volume)}*\n"
-                                  f"**Timeline**: *{short_time(player.position)}/{short_time(track.length)}*\n"
-                                  f"```{render_bar(36, player.position, track.length)}```"
+                                  f"**Length**: *{time_to_str(track.duration)}*; **Volume**: *{int(player.volume)}*\n"
+                                  f"**Timeline**: *{short_time(player.position)}/{short_time(track.duration)}*\n"
+                                  f"```{render_bar(34, player.position, track.duration)}```"
                                   f"{', '.join(options)}",
                       color=Colour.blurple())
-        if player.is_paused():
+        if player.paused:
             embed.set_author(name='On pause:',
                              icon_url='https://cdn.discordapp.com/emojis/884559976016805888.webp')
         else:
@@ -213,7 +255,7 @@ def player_embed(player: ExtPlayer):
         embed = Embed(description=f"**Nothing**\n"
                                   f"**Length**: *{time_to_str(0)}*; **Volume**: *{int(player.volume)}*\n"
                                   f"**Timeline**: *{short_time(0)}/{short_time(0)}*\n"
-                                  f"```{render_bar(36, 1, 1)}```"
+                                  f"```{render_bar(34, 1, 1)}```"
                                   f"{','.join(options)}",
                       color=Colour.blurple())
         embed.set_author(name='Stopped.',
@@ -222,73 +264,15 @@ def player_embed(player: ExtPlayer):
     return embed
 
 
-def get_related(identifier: str):
-    with urlopen(f'https://www.googleapis.com/youtube/v3/search?relatedToVideoId={identifier}'
-                 f'&part=snippet&maxResults=3&fields=items(snippet/title)&type=video&videoCategoryId=10'
-                 f'&key={YOUTUBE_API_TOKEN}') as url:
-        data = json.loads(url.read().decode())
-        if random.random() > 0.5:
-            data['items'][0], data['items'][1] = data['items'][1], data['items'][0]
-        # random.shuffle(data['items'])
-        for item in data['items']:
-            if 'snippet' in item:
-                return item['snippet']['title']
-
-
-async def play_next(player: ExtPlayer, prev=None):
+async def play_next(player: ExtPlayer):
     try:
-        if prev is not None:
-            if player.loop == Loop.SONG:
-                await player.play(prev)
-                return True
-
-        if player.queue:
-            track = await get_track(player.queue)
-            await player.play(track)
-            return True
-
-        if player.loop == Loop.HISTORY and len(player.history) > 0:
-            for item in player.history:
-                cnt = item['cnt']
-                track = item['track']
-                player.queue.extend([track] * cnt)
-
-            track = await get_track(player.queue)
-            await player.play(track)
-            player.history.clear()
-            return True
-
-        if player.related:
-            try:
-                track = await wavelink.YouTubeTrack.search(query=get_related(prev.identifier), return_first=True)
-                await player.play(track)
-                return True
-            except HTTPError:
-                await player.ctx.send(Embed(title="Related disabled - quota limit reached", color=Colour.red()),
-                                      delete_after=5.0)
-                player.related = False
-            except Exception:
-                await player.ctx.send(Embed(title="No related for this song",
-                                            color=Colour.gold()), delete_after=5.0)
-
-            return False
+        await player.play()
+        return True
+    except Exception:
+        return False
     finally:
         if player.lyrics_message is not None:
             load_lyrics(player)
-
-
-async def player_terminate(player: ExtPlayer, players, history=False):
-    with contextlib.suppress(Exception):
-        await player.disconnect()
-    with contextlib.suppress(Exception):
-        await player.lyrics_message.delete()
-    with contextlib.suppress(Exception):
-        await player.message.delete()
-    if history:
-        with contextlib.suppress(Exception):
-            await player.ctx.send(embed=build_history_embed(player, "Songs played during the session:"))
-    if player.guild.id in players and players[player.guild.id] == player:
-        players.pop(player.guild.id)
 
 
 async def player_message(player: ExtPlayer, bot):
@@ -345,7 +329,7 @@ def serialize_music(player: ExtPlayer):
         with open("secret.key", "wb") as key_file:
             key_file.write(key)
     key = open("secret.key", "rb").read()
-    dump = pickle.dumps({'queue': player.queue, 'history': player.history, 'track': player.track})
+    dump = pickle.dumps({'queue': player.queue, 'history': player.history, 'track': player.current})
     f = Fernet(key)
     encrypted = f.encrypt(dump)
     return encrypted
@@ -409,15 +393,15 @@ def beautify_lyrics(t):
 
 def load_lyrics(player: ExtPlayer):
     try:
-        transcript_list = YouTubeTranscriptApi.list_transcripts(player.track.identifier)
+        transcript_list = YouTubeTranscriptApi.list_transcripts(player.current.identifier)
         transcript = transcript_list.find_manually_created_transcript([player.lyrics_lang])
         if transcript is not None:
             transcript = transcript.fetch()
-            player.track.lyrics = beautify_lyrics(transcript)
+            player.lyrics = beautify_lyrics(transcript)
             return
     except Exception as e:
         with contextlib.suppress(AttributeError):
-            player.track.lyrics = None
+            player.lyrics = None
         return
 
 
@@ -428,16 +412,16 @@ async def init_lyrics(player: ExtPlayer, lang: str, ctx, bot):
     bot.loop.create_task(lyrics_auto_update(player, bot))
 
 
-def lyrics_embed(player):
+def lyrics_embed(player: ExtPlayer):
     limit = 500
-    embed = Embed(title=player.track.title, color=Colour.blurple())
+    embed = Embed(title=player.current.title, color=Colour.blurple())
     embed.set_author(name=f'{player.lyrics_lang.upper()} lyrics',
                      icon_url="https://cdn.discordapp.com/emojis/941343150595772467.webp")
     fields = []
-    if player is not None and player.track is not None:
-        lyrics = player.track.lyrics
-        time = player.position
-        ratio = time / player.track.length * 0.3
+    if player is not None and player.current is not None:
+        lyrics = player.lyrics
+        time = round(player.position / 1000)
+        ratio = time / player.current.duration * 0.3
         strings = []
         if lyrics is not None:
             for i in range(len(lyrics)):
@@ -472,8 +456,8 @@ def lyrics_embed(player):
     if len(fields) == 0:
         embed.description = "*No lyrics for this song*"
     for i in range(len(fields)):
-        fields[i] = ('-+'*(17 if len(fields) == 2 else 25)) + '-\n' + fields[i] + \
-                    ('-+'*(17 if len(fields) == 2 else 25)) + '-'
+        fields[i] = ('-+' * (17 if len(fields) == 2 else 25)) + '-\n' + fields[i] + \
+                    ('-+' * (17 if len(fields) == 2 else 25)) + '-'
     for idx, field in enumerate(fields):
         embed.add_field(name=f'Type {chr(ord("A") + idx)}', value=field, inline=True)
     return embed
@@ -487,6 +471,8 @@ async def lyrics_auto_update(player: ExtPlayer, bot):
             await player.lyrics_message.edit(embed=lyrics_embed(player))
             bad_req = 0
         except (errors.NotFound, AttributeError):
+            with contextlib.suppress(Exception):
+                await player.lyrics_message.delete()
             player.lyrics_message = None
             return
         except errors.HTTPException:
@@ -584,110 +570,90 @@ class PlayerView(View):
         self.player = player
         self.player_components()
 
+    def playback_button(self):
+        button_style = None
+        icon = None
+        if self.player.loop == self.player.LOOP_NONE:
+            icon = emoji.emojize(':repeat_button:')
+            button_style = ButtonStyle.gray
+        if self.player.loop == self.player.LOOP_SINGLE:
+            icon = emoji.emojize(':repeat_single_button:')
+            button_style = ButtonStyle.blurple
+        if self.player.loop == self.player.LOOP_QUEUE:
+            icon = emoji.emojize(':repeat_button:')
+            button_style = ButtonStyle.green
+        return Button(label="Loop", custom_id="repeat", style=button_style, emoji=icon, row=1)
+
     def player_components(self):
         self.add_item(Button(custom_id="prev", style=ButtonStyle.blurple,
                              emoji=emoji.emojize(':last_track_button:'), row=0))
         self.add_item(Button(custom_id="back", style=ButtonStyle.green,
                              emoji=emoji.emojize(':reverse_button:'), row=0))
         self.add_item(Button(custom_id="pause",
-                             style=(ButtonStyle.red if self.player.is_paused() else ButtonStyle.green),
+                             style=(ButtonStyle.red if self.player.paused else ButtonStyle.green),
                              emoji=emoji.emojize(':play_or_pause_button:'), row=0))
         self.add_item(Button(custom_id="forw", style=ButtonStyle.green,
                              emoji=emoji.emojize(':play_button:'), row=0))
         self.add_item(Button(custom_id="next", style=ButtonStyle.blurple,
                              emoji=emoji.emojize(':next_track_button:'), row=0))
-        self.add_item(Button(label="Auto", custom_id="related",
-                             style=(ButtonStyle.green if self.player.related else ButtonStyle.gray),
+        self.add_item(Button(label="Rand", custom_id="shuffle",
+                             style=(ButtonStyle.green if self.player.shuffle else ButtonStyle.gray),
                              emoji=emoji.emojize(':seedling:'), row=1))
-        self.add_item(Button(label="Loop", custom_id="repeat",
-                             style=(ButtonStyle.green if self.player.loop == Loop.HISTORY else
-                                    ButtonStyle.blurple if self.player.loop == Loop.SONG else
-                                    ButtonStyle.gray),
-                             emoji=(emoji.emojize(':repeat_button:') if self.player.loop != Loop.SONG else
-                                    emoji.emojize(':repeat_single_button:')), row=1))
+        self.add_item(self.playback_button())
         self.add_item(Button(label="Log", custom_id="history", emoji=emoji.emojize(':scroll:'), row=1))
         self.add_item(Button(label="Quit", custom_id="stop", style=ButtonStyle.red,
                              emoji=emoji.emojize(':black_large_square:'), row=1))
 
         options = []
         for item in self.player.queue:
-            if isinstance(item, wavelink.tracks.YouTubePlaylist):
-                j = 0
-                while j + item.selected_track < len(item.tracks) and len(options) < 10:
-                    idx = item.selected_track + j
-                    track = item.tracks[idx]
-                    word = f"{cut_text(track.title, 48)}, {short_time(track.length)}"
-                    num = str(len(options))
-                    options.append(SelectOption(label=word, value=num, emoji=emoji.emojize(f':keycap_{num}:')))
-                    j += 1
-            elif isinstance(item, spotify.SpotifyAsyncIterator):
-                idx = 0
-                while idx < len(item.tracks) and len(options) < 10:
-                    track = item.tracks[idx]
-                    name = f"{track['name']} - {track['artists'][0]['name']}"
-                    word = f"{cut_text(name, 48)}"
-                    num = str(len(options))
-                    options.append(SelectOption(label=word, value=num, emoji=emoji.emojize(f':keycap_{num}:')))
-                    idx += 1
-            else:
-                word = f"{cut_text(item.title, 48)}, {short_time(item.length)}"
-                num = str(len(options))
-                options.append(SelectOption(label=word, value=num, emoji=emoji.emojize(f':keycap_{num}:')))
+            word = f"{cut_text(item.title, 48)}, {short_time(item.duration)}"
+            num = str(len(options))
+            options.append(SelectOption(label=word, value=num, emoji=emoji.emojize(f':keycap_{num}:')))
             if len(options) == 10:
                 break
         if len(options) == 0:
             options.append(SelectOption(label="empty", value="cricket", emoji=emoji.emojize(':cricket:')))
         if options:
-            self.add_item(Select(placeholder=f"Queue: {options[0].label}", options=options, custom_id="queue_list", row=2))
+            self.add_item(
+                Select(placeholder=f"Queue: {options[0].label}", options=options, custom_id="queue_list", row=2))
 
     async def interaction_check(self, interaction: Interaction) -> bool:
         custom_id = interaction.data['custom_id']
         if custom_id == 'prev':
             if self.player.history:
                 prev = self.player.history.pop()['track']
-                self.player.loop = Loop.DISABLED
-                self.player.related = False
-                if self.player.is_playing():
-                    self.player.queue.appendleft(prev)
-                    await self.player.stop()
-                    ttl = 5
-                    while (self.player.track is None or self.player.track.title != prev.title) and ttl > 0:
-                        await asyncio.sleep(1)
-                        ttl -= 1
-                    if ttl > 0:
-                        self.player.queue.appendleft(self.player.history.pop()['track'])
-                else:
-                    await self.player.play(prev)
+                self.player.loop = self.player.LOOP_NONE
+                self.player.moving_backwards = True
+                await self.player.play(prev)
             else:
                 await self.player.seek(0)
         elif custom_id == 'back':
             cur = self.player.position
-            await self.player.seek(int(1000 * (cur - 30)))
+            await self.player.seek(cur - 30 * 1000)
         elif custom_id == 'pause':
-            if self.player.is_playing():
-                if self.player.is_paused():
-                    await self.player.resume()
+            if self.player.is_playing:
+                if self.player.paused:
+                    await self.player.set_pause(False)
                 else:
-                    await self.player.pause()
+                    await self.player.set_pause(True)
         elif custom_id == 'forw':
             cur = self.player.position
-            await self.player.seek(int(1000 * (cur + 30)))
+            await self.player.seek(cur + 30 * 1000)
         elif custom_id == 'next':
-            if self.player.loop == Loop.SONG:
-                self.player.loop = Loop.DISABLED
-            await self.player.stop()
+            if self.player.loop == self.player.LOOP_SINGLE:
+                self.player.loop = self.player.LOOP_NONE
+            await self.player.play()
         elif custom_id == 'mute':
             if self.player.volume > 0:
                 await self.player.set_volume(0)
             else:
                 await self.player.set_volume(100)
-        elif custom_id == 'related':
-            self.player.related ^= True
+        elif custom_id == 'shuffle':
+            self.player.set_shuffle(self.player.shuffle ^ True)
         elif custom_id == 'repeat':
-            self.player.loop = Loop((self.player.loop.value + 1) % 3)
+            self.player.loop = (self.player.loop + 1) % 3
         elif custom_id == 'stop':
-            self.player.loop = Loop.DISABLED
-            self.player.related = False
+            self.player.loop = self.player.LOOP_NONE
             self.player.queue.clear()
             await self.player.stop()
         elif custom_id == 'history':
@@ -700,11 +666,22 @@ class PlayerView(View):
             if not value.isnumeric():
                 return True
             for i in range(int(value)):
-                await get_track(self.player.queue, parse=False)
-            self.player.loop = Loop.DISABLED
-            await self.player.stop()
+                await get_track(self.player)
+            self.player.loop = self.player.LOOP_NONE
+            await self.player.play()
         await interaction.response.edit_message()
         return True
+
+
+async def search_query(node: lavalink.Node, text: str, source: str='ytsearch'):
+    url_rx = re.compile(r'https?://(?:www\.)?.+')
+    query = text.strip('<>')
+
+    if not url_rx.match(query):
+        query = f'{source}:{query}'
+
+    results = await node.get_tracks(query)
+    return results
 
 
 class MusicPlayerCog(commands.Cog, name="Music player"):
@@ -713,14 +690,14 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
 
     ***Available commands:***
 
-    **/play** - play song by name (also url from youtube/soundcloud supported)
-    **/playlist** - play youtube playlist
-    **/spotify** - play spotify playlist
+    **/play** - play songs from query (may be link or text query)
 
     **/seek** - play from the specified second
     **/skip** - skip current song
     **/pause** - pause/continue
     **/stfu** - clear queue and stop playing
+
+    **/respawn** - start rendering the player body in the last message
 
     **/queue** - song queue
     **/history** - song history
@@ -728,197 +705,134 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
 
     def __init__(self, bot):
         self.bot = bot
-        self.bot.loop.create_task(self.connect_nodes())
-        self.players = {}
+        self.lavalink = None
+        self.bot.loop.create_task(self.setup_hook())
 
-    async def connect_nodes(self):
+    async def setup_hook(self) -> None:
         await self.bot.wait_until_ready()
-        await wavelink.NodePool.create_node(bot=self.bot,
-                                            host=WAVELINK_HOST,
-                                            port=WAVELINK_PORT,
-                                            password=WAVELINK_PASSWORD,
-                                            spotify_client=spotify.SpotifyClient(
-                                                client_id=SPOTIFY_CLIENT_ID,
-                                                client_secret=SPOTIFY_CLIENT_SECRET))
+        if not hasattr(self.bot, 'lavalink'):
+            self.bot.lavalink = lavalink.Client(self.bot.user.id)
+            self.bot.lavalink.add_node(host=LAVALINK_HOST, port=LAVALINK_PORT, password=LAVALINK_PASSWORD,
+                                       region='eu', name='local-node')
+        self.lavalink: lavalink.Client = self.bot.lavalink
+        self.lavalink.add_event_hooks(self)
 
-    @commands.Cog.listener()
-    async def on_wavelink_node_ready(self, node: Node):
+    def cog_unload(self):
+        self.lavalink._event_hooks.clear()
+
+    @lavalink.listener(NodeConnectedEvent)
+    async def on_node_ready(self, event: NodeConnectedEvent):
         log.info("Connected to lavalink! Music Player api is fine")
 
-    @commands.Cog.listener()
-    async def on_wavelink_track_start(self, player: ExtPlayer, track: Track):
+    @lavalink.listener(TrackStartEvent)
+    async def on_track_start(self, event: TrackStartEvent):
+        player: ExtPlayer = event.player
         if player.message is None:
             await player_message(player, self.bot)
 
-    async def soft_destroy(self, player):
-        h = player.hash
-        await asyncio.sleep(60)
-        if h != player.hash:
-            return
-        if not player.is_playing():
-            await player_terminate(player, self.players, history=True)
-
-    @commands.Cog.listener()
-    async def on_wavelink_track_end(self, player: ExtPlayer, track: Track, reason):
-        if player.history and player.history[-1]['track'].title == track.title:
-            player.history[-1]['cnt'] += 1
+    @lavalink.listener(TrackEndEvent)
+    async def on_track_end(self, event: TrackEndEvent):
+        player: ExtPlayer = event.player
+        if player.moving_backwards:
+            player.queue.insert(0, event.track)
+            player.moving_backwards = False
         else:
-            player.history.append({'track': track, 'cnt': 1})
-
-        playing = await play_next(player, track)
-        if not playing:
-            self.bot.loop.create_task(self.soft_destroy(player))
-
-    async def update_server_player(self, ctx, vc):
-        if not wavelink.NodePool.get_node().is_connected():
-            await ctx.send(embed=Embed(title="No lavalink connection, trying to reconnect\n"
-                                             "Please, retry in a few seconds", color=Colour.gold()),
-                           delete_after=10.0)
-            await (wavelink.NodePool.get_node())._connect()
-            return 0
-        server_id = ctx.guild.id
-        try:
-            if vc is None:
-                if server_id not in self.players:
-                    self.players[server_id] = await ctx.user.voice.channel.connect(cls=ExtPlayer)
-            elif server_id in self.players:
-                await self.players[server_id].move_to(vc)
+            if player.history and len(player.history) > 0 and player.history[-1]['track'].title == event.track.title:
+                player.history[-1]['cnt'] += 1
             else:
-                self.players[server_id] = await vc.connect(cls=ExtPlayer)
-        except Exception:
-            await ctx.send(embed=Embed(title="Which voice channel?", color=Colour.green()), delete_after=10.0)
-            return 0
-        channel = ctx.channel
-        if self.players[server_id].ctx is None:
-            self.players[server_id].ctx = channel
-        return 1
+                player.history.append({'track': event.track, 'cnt': 1})
 
-    @slash_command(name='spotify', description="Add playlist from Spotify")
-    async def spotify(self, ctx,
-                      url: str = SlashOption(description="Album URL or ID", required=True),
-                      vc: GuildChannel = SlashOption(channel_types=[ChannelType.voice], default=None, required=False),
-                      top: bool = SlashOption(description="Add song at the top of the queue", required=False)):
-        await ctx.response.defer()
-        if not await self.update_server_player(ctx, vc):
-            return
+    async def update_server_player(self, ctx, voice_client):
         server_id = ctx.guild.id
-        player = self.players[server_id]
-        queue = player.queue
-        try:
-            playlist, node = spotify.SpotifyTrack.iterator(query=url)
-            await playlist.fill_queue(node)
-        except Exception:
-            await ctx.send(embed=Embed(title="Nothing found :(", color=Colour.dark_red()),
-                           delete_after=10.0)
-            return
-        if top:
-            queue.appendleft(playlist)
-        else:
-            queue.append(playlist)
-        if player.is_playing():
-            await ctx.send(embed=Embed(title=f"'**{playlist.name}**' added to queue",
-                                       color=Colour.green()),
-                           delete_after=10.0)
-            return
-        else:
-            await ctx.send(embed=Embed(title=f"'**{playlist.name}**' is now playing",
-                                       color=Colour.green()),
-                           delete_after=10.0)
-        await play_next(player)
+        player = self.bot.lavalink.player_manager.create(server_id, cls=ExtPlayer)
 
-    @slash_command(name='play', description='Play a song from Youtube')
+        if not player.is_connected:
+            try:
+                if voice_client is None:
+                    await ctx.user.voice.channel.connect(cls=LavalinkVoice)
+                else:
+                    await voice_client.connect(cls=LavalinkVoice)
+                player.bot = self.bot
+            except Exception:
+                await ctx.send(embed=Embed(title="Which voice channel?", color=Colour.green()), delete_after=10.0)
+                return False
+
+        channel = ctx.channel
+        if player.ctx is None:
+            player.ctx = channel
+        return True
+
+    @slash_command(name='play', description='Play songs from query (may be link or text query)')
     async def play(self,
                    interaction: Interaction,
-                   track: str = SlashOption(description="Track name", required=True),
+                   query: str = SlashOption(description="Song name or link", required=True),
                    vc: GuildChannel = SlashOption(channel_types=[ChannelType.voice], default=None, required=False),
-                   top: bool = SlashOption(description="Add song at the top of the queue", required=False)):
+                   top: bool = SlashOption(description="Add songs at the top of the queue", required=False)):
         if not await self.update_server_player(interaction, vc):
             return
         server_id = interaction.guild.id
-        player = self.players[server_id]
-        queue = player.queue
-        try:
-            track = await wavelink.YouTubeTrack.search(query=track, return_first=True)
-        except Exception:
-            await interaction.send(embed=Embed(title="Nothing found :(", color=Colour.dark_red()),
-                                   delete_after=10.0)
-            return
-        if top:
-            queue.appendleft(track)
-        else:
-            queue.append(track)
-        if player.is_playing():
-            await interaction.response.send_message(embed=Embed(title=f"Song '**{track.title}**' (*{short_time(track.length)}*) added to queue",
-                                                    color=Colour.green()),
-                                                    delete_after=10.0)
-            return
-        else:
-            await interaction.response.send_message(embed=Embed(title=f"Song '**{track.title}**' (*{short_time(track.length)}*) is now playing",
-                                                    color=Colour.green()),
-                                                    delete_after=10.0)
-        await play_next(player)
+        player: ExtPlayer = self.bot.lavalink.player_manager.get(server_id)
 
-    @play.on_autocomplete("track")
+        search_result = await search_query(player.node, query)
+        if len(search_result.tracks) == 0:
+            raise Exception
+
+        embed = Embed(color=Colour.green())
+        embed.set_author(name=interaction.user.nick, icon_url=interaction.user.avatar.url)
+
+        if search_result.load_type == LoadType.EMPTY:
+            await interaction.send(embed=Embed(title="Nothing found :(", color=Colour.dark_red()), delete_after=10.0)
+            return
+        elif search_result.load_type == LoadType.PLAYLIST:
+            tracks = search_result.tracks
+            if top:
+                for track in reversed(tracks):
+                    player.add(track=track, requester=interaction.user.id, index=0)
+            else:
+                for track in tracks:
+                    player.add(track=track, requester=interaction.user.id)
+            embed.title = 'Playlist added'
+            embed.description = f'**{search_result.playlist_info.name}** - *{len(tracks)}* tracks'
+        else:
+            track = search_result.tracks[0]
+            embed.title = 'Track added'
+            embed.description = f'[{track.title}]({track.uri})'
+            if top:
+                player.add(track=track, requester=interaction.user.id, index=0)
+            else:
+                player.add(track=track, requester=interaction.user.id)
+
+        await interaction.response.send_message(embed=embed, delete_after=10.0)
+        if not player.is_playing:
+            await play_next(player)
+
+    @play.on_autocomplete("query")
     async def load_tracklist(self, interaction: Interaction, query: str):
         if not query:
             await interaction.response.send_autocomplete([])
             return
-        tracks = await wavelink.YouTubeTrack.search(query=query, return_first=False)
-        titles = list(map(lambda track: track.title, tracks))[:5]
+        node = random.choice(self.lavalink.nodes)
+        search_result = await search_query(node, query)
+        titles = list(map(lambda track: track.title, search_result.tracks))[:5]
         await interaction.response.send_autocomplete(titles)
 
-    @slash_command(name='playlist', description='Add playlist from Youtube')
-    async def playlist(self, ctx,
-                       url: str = SlashOption(description="Playlist URL", required=True),
-                       offset: int = SlashOption(description="Track index from which to start playing songs",
-                                                 default=0,
-                                                 required=False),
-                       vc: GuildChannel = SlashOption(channel_types=[ChannelType.voice], default=None, required=False),
-                       top: bool = SlashOption(description="Add song at the top of the queue", required=False)):
+    @slash_command(name='respawn', description='Resend player body')
+    async def respawn(self, ctx):
         await ctx.response.defer()
-        if not await self.update_server_player(ctx, vc):
-            return
-        server_id = ctx.guild.id
-        player = self.players[server_id]
-        queue = player.queue
-        try:
-            playlist = await wavelink.YouTubePlaylist.search(query=url)
-            playlist.selected_track = max(0, offset)
-        except Exception:
-            await ctx.send(embed=Embed(title="Nothing found :(", color=Colour.dark_red()),
-                           delete_after=10.0)
-            return
-        if top:
-            queue.appendleft(playlist)
-        else:
-            queue.append(playlist)
-        if player.is_playing():
-            await ctx.send(embed=Embed(title=f"Playlist '**{playlist.name}**' added to queue",
-                                       color=Colour.green()),
-                           delete_after=10.0)
-            return
-        else:
-            await ctx.send(embed=Embed(title=f"Playlist '**{playlist.name}**' is now playing",
-                                       color=Colour.green()),
-                           delete_after=10.0)
-        await play_next(player)
-
-    @slash_command(name='player', description='Resend player body')
-    async def player(self, ctx):
-        await ctx.response.defer()
-        server_id = ctx.guild.id
-        if server_id not in self.players:
+        player: ExtPlayer = self.bot.lavalink.player_manager.get(ctx.guild.id)
+        if not player or not player.ctx:
             await ctx.send(embed=Embed(title="Nothing is playing", color=Colour.red()), delete_after=5)
         else:
             await ctx.send(embed=Embed(title="Player respawned", color=Colour.green()), delete_after=5)
-            await respawn_player_body(self.players[server_id], ctx, self.bot)
+            await respawn_player_body(player, ctx, self.bot)
 
     @slash_command(name='save', description='Save (serialize) music player state in chat message')
     async def save(self, ctx,
                    name: str = SlashOption(description="Dump name (optional)", required=False)):
         await ctx.response.defer()
         try:
-            data = io.BytesIO(serialize_music(self.players[ctx.guild.id]))
+            player: ExtPlayer = self.bot.lavalink.player_manager.get(ctx.guild.id)
+            data = io.BytesIO(serialize_music(player))
             embed = Embed(description='Use ***floppy disk*** react on this message to restore the dump\n'
                                       '**This action will overwrite all current music state**\n '
                                       'If nothing is playing now, you should be in the voice channel',
@@ -931,14 +845,14 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
                              icon_url="https://cdn.discordapp.com/emojis/884559976016805888.webp")
             message = await ctx.send(embed=embed, file=File(data, "dump"))
             await message.add_reaction('💾')
-        except:
+        except Exception as e:
             embed = Embed(description='Something went wrong...',
                           color=Colour.blurple())
             await ctx.send(embed=embed, delete_after=5.0)
 
     async def load(self, message, user):
+        await self.update_server_player(message, user.voice.channel)
         try:
-            server_id = message.guild.id
             file_url = message.attachments[0].url
             request = Request(
                 file_url,
@@ -946,82 +860,72 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
             )
             binary = urlopen(request).read()
             obj = deserialize_music(binary)
-            obj['queue'].appendleft(obj['track'])
-            if server_id not in self.players:
+            player: ExtPlayer = self.bot.lavalink.player_manager.get(message.guild.id)
+            if not player or not player.is_connected:
                 if user.voice is None:
                     await message.channel.send(embed=Embed(title="Which voice channel?", color=Colour.green()),
                                                delete_after=10.0)
                     raise Exception('No voice chat')
-                await self.update_server_player(message, user.voice.channel)
-            self.players[server_id].queue = obj['queue']
-            self.players[server_id].history = obj['history']
-            if self.players[server_id].is_playing():
-                await self.players[server_id].stop()
-            else:
-                await play_next(self.players[server_id])
+            player.queue = obj['queue']
+            player.history = obj['history']
+            await player.play(obj['track'])
         except Exception as e:
             return False
         return True
 
-    @slash_command(name='shuffle', description='Queue random shuffle')
+    @slash_command(name='shuffle', description='Queue random playback')
     async def shuffle(self, ctx):
         await ctx.response.defer()
-        if ctx.guild.id in self.players:
-            player = self.players[ctx.guild.id]
-            for item in player.queue:
-                if isinstance(item, wavelink.tracks.YouTubePlaylist):
-                    my_shuffle(item.tracks, item.selected_track)
-                elif isinstance(item, spotify.SpotifyAsyncIterator):
-                    random.shuffle(item.tracks)
-            random.shuffle(player.queue)
-        await ctx.send(embed=Embed(title="Done", color=Colour.green()), delete_after=5)
-
-    @slash_command(name='move', description='Move to specified voice channel (default=<user voice channel>)')
-    async def move(self, ctx,
-                   vc: GuildChannel = SlashOption(channel_types=[ChannelType.voice], default=None, required=True)):
-        await ctx.response.defer()
-        server_id = ctx.guild.id
-        if server_id in self.players and self.players[server_id].is_playing():
-            try:
-                player = self.players[server_id]
-                if vc is None:
-                    await player.move_to(ctx.author.voice.channel)
-                else:
-                    await player.move_to(vc)
-                embed = Embed(title="Ok", color=Colour.green())
-            except Exception:
-                embed = Embed(title="Can't move in this channel", color=Colour.red())
+        player: ExtPlayer = self.bot.lavalink.player_manager.get(ctx.guild.id)
+        if player.shuffle:
+            player.set_shuffle(False)
+            await ctx.send(embed=Embed(title="Shuffle turned off", color=Colour.green()), delete_after=5)
         else:
-            embed = Embed(title="Player not initialized", color=Colour.red())
-        await ctx.send(embed=embed, delete_after=5.0)
+            player.set_shuffle(True)
+            await ctx.send(embed=Embed(title="Shuffle turned on", color=Colour.green()), delete_after=5)
+
+    # @slash_command(name='move', description='Move to specified voice channel (default=<user voice channel>)')
+    # async def move(self, ctx,
+    #                vc: GuildChannel = SlashOption(channel_types=[ChannelType.voice], default=None, required=True)):
+    #     await ctx.response.defer()
+    #     server_id = ctx.guild.id
+    #     if server_id in self.players and self.players[server_id].is_playing():
+    #         try:
+    #             player = self.players[server_id]
+    #             if vc is None:
+    #                 await player.move_to(ctx.author.voice.channel)
+    #             else:
+    #                 await player.move_to(vc)
+    #             embed = Embed(title="Ok", color=Colour.green())
+    #         except Exception:
+    #             embed = Embed(title="Can't move in this channel", color=Colour.red())
+    #     else:
+    #         embed = Embed(title="Player not initialized", color=Colour.red())
+    #     await ctx.send(embed=embed, delete_after=5.0)
 
     @slash_command(name='pop', description='Delete specific song/playlist from queue by index')
     async def pop(self, ctx,
                   idx: int = SlashOption(description="ID of the song/playlist from the queue", required=True)):
         server_id = ctx.guild.id
-        if server_id in self.players:
-            queue = self.players[server_id].queue
-            if idx >= 0 or idx < len(queue):
-                item = queue[idx]
-                del queue[idx]
-                if isinstance(item, (wavelink.tracks.YouTubePlaylist, spotify.SpotifyAsyncIterator)):
-                    embed = Embed(title=f"Playlist: '**{item.name}**' was deleted", color=Colour.blurple())
-                else:
-                    embed = Embed(title=f"Song: '**{item.title}**' was deleted", color=Colour.blurple())
-            else:
-                embed = Embed(title="Wrong index given", color=Colour.red())
+        player: ExtPlayer = self.bot.lavalink.player_manager.get(server_id)
+        queue = player.queue
+        if idx >= 0 or idx < len(queue):
+            item = queue[idx]
+            del queue[idx]
+            embed = Embed(title=f"Song: '**{item.title}**' was deleted", color=Colour.blurple())
         else:
-            embed = Embed(title="Player not initialized", color=Colour.red())
+            embed = Embed(title="Wrong index given", color=Colour.red())
         await ctx.send(embed=embed, delete_after=10.0)
 
     @slash_command(name='skip', description='Skip current song')
     async def skip(self, ctx):
         await ctx.response.defer()
         server_id = ctx.guild.id
-        if server_id in self.players and self.players[server_id].is_playing():
-            if self.players[server_id].loop == Loop.SONG:
-                self.players[server_id].loop = Loop.DISABLED
-            await self.players[server_id].stop()
+        player: ExtPlayer = self.bot.lavalink.player_manager.get(server_id)
+        if player.is_playing:
+            if player.loop == player.LOOP_SINGLE:
+                player.loop = player.LOOP_NONE
+            await player.play()
             embed = Embed(title="Current track skipped", color=Colour.gold())
         else:
             embed = Embed(title="Nothing playing at this moment", color=Colour.gold())
@@ -1031,12 +935,13 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
     async def pause(self, ctx):
         await ctx.response.defer()
         server_id = ctx.guild.id
-        if server_id in self.players and self.players[server_id].is_playing():
-            if self.players[server_id].is_paused():
-                await self.players[server_id].resume()
+        player: ExtPlayer = self.bot.lavalink.player_manager.get(server_id)
+        if player and player.is_connected:
+            if player.paused:
+                await player.set_pause(False)
                 embed = Embed(title="Playing again", color=Colour.gold())
             else:
-                await self.players[server_id].pause()
+                await player.set_pause(True)
                 embed = Embed(title="Song paused", color=Colour.gold())
         else:
             embed = Embed(title="Nothing to pause", color=Colour.gold())
@@ -1046,15 +951,12 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
                                             '(immediately destroys music player session)')
     async def disconnect(self, ctx):
         server_id = ctx.guild.id
-        if server_id in self.players:
-            player = self.players[server_id]
-            player.queue.clear()
-            player.loop = Loop.DISABLED
-            player.related = False
-            await self.players[server_id].stop()
+        player: ExtPlayer = self.bot.lavalink.player_manager.get(server_id)
+        if player and player.is_connected:
             embed = Embed(color=Colour.blurple())
             embed.set_author(name='Ok', icon_url="https://cdn.discordapp.com/emojis/807417229976272896.webp")
-            await player_terminate(player, self.players)
+
+            await player.destroy()
         else:
             embed = Embed(color=Colour.blurple())
             embed.set_author(name="I've been quiet enough",
@@ -1064,8 +966,9 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
     @slash_command(name='queue', description='Show current song queue')
     async def queue(self, ctx):
         server_id = ctx.guild.id
-        if server_id in self.players:
-            await ctx.response.send_message(embed=build_queue_embed(self.players[server_id]),
+        player: ExtPlayer = self.bot.lavalink.player_manager.get(server_id)
+        if player and player.is_connected:
+            await ctx.response.send_message(embed=build_queue_embed(player),
                                             delete_after=60.0, ephemeral=True)
         else:
             await ctx.response.send_message(embed=Embed(title="Player not initialized", color=Colour.red()),
@@ -1074,19 +977,21 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
     @slash_command(name='history', description='Show song history')
     async def history(self, ctx):
         server_id = ctx.guild.id
-        if server_id in self.players:
-            await ctx.response.send_message(embed=build_history_embed(self.players[server_id], "History:"),
+        player: ExtPlayer = self.bot.lavalink.player_manager.get(server_id)
+        if player and player.is_connected:
+            await ctx.response.send_message(embed=build_history_embed(player, "History:"),
                                             delete_after=60.0, ephemeral=True)
         else:
-            await ctx.response.send_message(Embed(title="Player not initialized", color=Colour.red()),
+            await ctx.response.send_message(Embed(title="Player not connected", color=Colour.red()),
                                             delete_after=5.0, ephemeral=True)
 
     @slash_command(name='seek', description='Move timeline to specific time in seconds')
     async def seek(self, ctx, time: int = SlashOption(description="Time to seek in seconds", required=True)):
         await ctx.response.defer()
         server_id = ctx.guild.id
-        if server_id in self.players and self.players[server_id].is_playing():
-            await self.players[server_id].seek(1000 * time)
+        player: ExtPlayer = self.bot.lavalink.player_manager.get(server_id)
+        if player and player.is_playing:
+            await player.seek(1000 * time)
             embed = Embed(title="Ok", color=Colour.blurple())
         else:
             embed = Embed(title="Nothing to move", color=Colour.blurple())
@@ -1096,53 +1001,32 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
     async def volume(self, ctx, value: int = SlashOption(description="Volume value", required=True)):
         await ctx.response.defer()
         server_id = ctx.guild.id
-        if VOLUME_LOCK:
-            await ctx.send(embed=Embed(
-                title="This feature is disabled", color=Colour.red()
-            ), delete_after=10.0)
-            return
-        if server_id in self.players:
-            await self.players[server_id].set_volume(value)
+        player: ExtPlayer = self.bot.lavalink.player_manager.get(server_id)
+        if player and player.is_connected:
+            await player.set_volume(value)
             embed = Embed(title="Ok", color=Colour.blurple())
         else:
-            embed = Embed(title="Player not initialized", color=Colour.blurple())
+            embed = Embed(title="Player not connected", color=Colour.blurple())
         await ctx.send(embed=embed, delete_after=10.0)
 
     @slash_command(name='loop', description='Repeat song infinitely (turns off when skipped, stopped, plays previous)')
     async def loop(self, ctx, type: int = SlashOption(description="Loop type",
-                                                      choices={"Disabled": 0, "History": 1, "Song": 2},
+                                                      choices={"Disabled": 0, "Single": 1, "Queue": 2},
                                                       required=True)):
         await ctx.response.defer()
         server_id = ctx.guild.id
-        if server_id in self.players and self.players[server_id].is_playing():
-            player = self.players[server_id]
-            if type == Loop.DISABLED:
-                embed = Embed(title="Replay disabled", color=Colour.blurple())
-            elif type == Loop.SONG:
-                embed = Embed(title="On song replay", color=Colour.blurple())
-            elif type == Loop.HISTORY:
-                embed = Embed(title="On history replay", color=Colour.blurple())
-            player.loop = Loop(type)
-        else:
-            embed = Embed(title="Nothing to loop", color=Colour.blurple())
-        await ctx.send(embed=embed, delete_after=10.0)
+        player: ExtPlayer = self.bot.lavalink.player_manager.get(server_id)
 
-    @slash_command(name='related', description='Play related songs (turns off when stopped, plays previous)')
-    async def related(self, ctx):
-        await ctx.response.defer()
-        if not YOUTUBE_API_TOKEN:
-            embed = Embed(title="Youtube token not specified, but required for this command", color=Colour.dark_red())
-            await ctx.send(embed=embed, delete_after=5.0)
-        server_id = ctx.guild.id
-        if server_id in self.players and self.players[server_id].is_playing():
-            player = self.players[server_id]
-            if player.related:
-                embed = Embed(title="Auto-select disabled", color=Colour.blurple())
-            else:
-                embed = Embed(title="Related mode turned on", color=Colour.blurple())
-            player.related ^= True
-        else:
-            embed = Embed(title="Nothing is playing", color=Colour.blurple())
+        embed = Embed(title="Nothing to loop", color=Colour.blurple())
+        if player and player.is_playing:
+            if type == player.LOOP_NONE:
+                embed = Embed(title="Replay disabled", color=Colour.blurple())
+            elif type == player.LOOP_SINGLE:
+                embed = Embed(title="On song repeat", color=Colour.blurple())
+            elif type == player.LOOP_QUEUE:
+                embed = Embed(title="On queue repeat", color=Colour.blurple())
+            player.loop = type
+
         await ctx.send(embed=embed, delete_after=10.0)
 
     @slash_command(name='lyrics', description='Show lyrics of the song')
@@ -1155,8 +1039,9 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
                                                         required=False)):
         await ctx.response.defer()
         server_id = ctx.guild.id
-        if server_id in self.players and self.players[server_id].is_playing():
-            player = self.players[server_id]
+        player: ExtPlayer = self.bot.lavalink.player_manager.get(server_id)
+
+        if player and player.is_playing:
             if player.lyrics_message is None:
                 await init_lyrics(player, lang, ctx, self.bot)
             else:
@@ -1192,21 +1077,13 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
                 await message.add_reaction('👎')
             return
 
-        if server_id not in self.players or \
-                (self.players[server_id].message is not None and self.players[server_id].message.id != message.id):
+        player: ExtPlayer = self.bot.lavalink.player_manager.get(server_id)
+        if not player or player.message is not None and player.message.id != message.id:
             with contextlib.suppress(Exception):
                 text = message.embeds[0].description
                 if 'Length' in text and 'Volume' in text and 'Timeline' in text:
                     await message.delete()
             return
-
-        if payload.user_id != self.bot.user.id:
-            await message.add_reaction(emoji.emojize(':angry_face:'))
-            await message.remove_reaction(payload.emoji, user)
-        else:
-            await asyncio.sleep(2)
-            with contextlib.suppress(errors.NotFound):
-                await message.remove_reaction(payload.emoji, user)
 
 
 def setup(bot):

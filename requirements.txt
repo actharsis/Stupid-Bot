@@ -8,3 +8,4 @@ websocket-client>=1.7.0
 yarl>=1.9.4
 numpy>=1.26.4
 playwright>=1.41.2
+lavalink>=5.4.0
