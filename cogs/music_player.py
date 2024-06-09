@@ -30,7 +30,7 @@ from youtube_transcript_api import YouTubeTranscriptApi
 
 import lavalink
 
-from lavalink.events import TrackStartEvent, QueueEndEvent, TrackEndEvent, NodeConnectedEvent
+from lavalink.events import TrackStartEvent, TrackEndEvent, NodeConnectedEvent
 from lavalink.errors import ClientError
 from lavalink.filters import LowPass
 from lavalink.server import LoadType
@@ -570,19 +570,26 @@ class PlayerView(View):
         self.player = player
         self.player_components()
 
-    def playback_button(self):
-        button_style = None
-        icon = None
+    def loop_button(self):
+        button = Button(label="Loop", custom_id="repeat", row=1)
         if self.player.loop == self.player.LOOP_NONE:
-            icon = emoji.emojize(':repeat_button:')
-            button_style = ButtonStyle.gray
+            button.emoji = emoji.emojize(':repeat_button:')
+            button.style = ButtonStyle.gray
         if self.player.loop == self.player.LOOP_SINGLE:
-            icon = emoji.emojize(':repeat_single_button:')
-            button_style = ButtonStyle.blurple
+            button.emoji = emoji.emojize(':repeat_single_button:')
+            button.style = ButtonStyle.blurple
         if self.player.loop == self.player.LOOP_QUEUE:
-            icon = emoji.emojize(':repeat_button:')
-            button_style = ButtonStyle.green
-        return Button(label="Loop", custom_id="repeat", style=button_style, emoji=icon, row=1)
+            button.emoji = emoji.emojize(':repeat_button:')
+            button.style = ButtonStyle.green
+        return button
+
+    def stop_button(self):
+        button = Button(custom_id="stop", style=ButtonStyle.red, emoji=emoji.emojize(':black_large_square:'), row=1)
+        if self.player.is_playing:
+            button.label = "Exit"
+        else:
+            button.label = "Quit"
+        return button
 
     def player_components(self):
         self.add_item(Button(custom_id="prev", style=ButtonStyle.blurple,
@@ -599,10 +606,9 @@ class PlayerView(View):
         self.add_item(Button(label="Rand", custom_id="shuffle",
                              style=(ButtonStyle.green if self.player.shuffle else ButtonStyle.gray),
                              emoji=emoji.emojize(':seedling:'), row=1))
-        self.add_item(self.playback_button())
+        self.add_item(self.loop_button())
         self.add_item(Button(label="Log", custom_id="history", emoji=emoji.emojize(':scroll:'), row=1))
-        self.add_item(Button(label="Quit", custom_id="stop", style=ButtonStyle.red,
-                             emoji=emoji.emojize(':black_large_square:'), row=1))
+        self.add_item(self.stop_button())
 
         options = []
         for item in self.player.queue:
@@ -653,9 +659,14 @@ class PlayerView(View):
         elif custom_id == 'repeat':
             self.player.loop = (self.player.loop + 1) % 3
         elif custom_id == 'stop':
-            self.player.loop = self.player.LOOP_NONE
-            self.player.queue.clear()
-            await self.player.stop()
+            if self.player.is_playing:
+                self.player.loop = self.player.LOOP_NONE
+                self.player.queue.clear()
+                await self.player.stop()
+                return True
+            else:
+                await self.player.destroy()
+                return True
         elif custom_id == 'history':
             await interaction.response.send_message(
                 embed=build_history_embed(self.player, "History:"), ephemeral=True
