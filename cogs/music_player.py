@@ -1,5 +1,7 @@
 import asyncio
 import contextlib
+from enum import Enum
+
 import emoji
 import io
 import logging
@@ -10,12 +12,14 @@ import re
 import string
 
 from collections import deque
-
-import nextcord
-from lavalink import Node
-
 from config import *
 from cryptography.fernet import Fernet
+from os.path import exists
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
+from youtube_transcript_api import YouTubeTranscriptApi
+
+import nextcord
 from nextcord import (ButtonStyle, ChannelType, Client, Embed, Interaction, File,
                       SelectOption, SlashOption, errors, slash_command)
 from nextcord.abc import GuildChannel
@@ -23,15 +27,11 @@ from nextcord.channel import VoiceChannel
 from nextcord.colour import Colour
 from nextcord.ext import commands
 from nextcord.ui import Button, Select, View
-from os.path import exists
-from urllib.error import HTTPError
-from urllib.request import Request, urlopen
-from youtube_transcript_api import YouTubeTranscriptApi
 
 import lavalink
-
-from lavalink.events import TrackStartEvent, TrackEndEvent, NodeConnectedEvent
+from lavalink import Node
 from lavalink.errors import ClientError
+from lavalink.events import TrackStartEvent, TrackEndEvent, NodeConnectedEvent
 from lavalink.filters import LowPass
 from lavalink.server import LoadType
 
@@ -39,7 +39,6 @@ if SAFETY:
     from modules.predict import is_nsfw
 
 log = logging.getLogger(__name__)
-
 
 def time_to_str(time_ms):
     time = round(time_ms / 1000)
@@ -86,7 +85,10 @@ class ExtPlayer(lavalink.DefaultPlayer):
         with contextlib.suppress(Exception):
             await self.message.delete()
         with contextlib.suppress(Exception):
-            await self.ctx.send(embed=build_history_embed(self, "Songs played during the session:"))
+            embed = build_history_embed(self, "Songs played during the session:")
+            if HISTORY_DUMP:
+                data = io.BytesIO(serialize_music(self, SerializeType.HISTORY))
+            await self.ctx.send(embed=embed, file=File(data, "dump") if HISTORY_DUMP else None)
         with contextlib.suppress(Exception):
             guild = self.bot.get_guild(self.guild_id)
             await guild.voice_client.disconnect(force=True)
@@ -219,6 +221,7 @@ def build_history_embed(player: ExtPlayer, title: str):
                 text += f", **{item['cnt']}**x"
             text += '\n\n'
             if len(text) > 3000:
+                text += 'and more...'
                 break
     embed = Embed(description=text)
     embed.set_author(name=title, icon_url="https://cdn.discordapp.com/emojis/695126168680005662.webp")
@@ -299,37 +302,44 @@ async def respawn_player_body(player, ctx, bot):
 async def message_auto_update(player, bot):
     try:
         idx = player.message.id
-        bad_req = 0
+        prev = None
         while player.message is not None and idx == player.message.id:
             try:
                 view = PlayerView(player)
-                await player.message.edit(
-                    embed=player_embed(player),
-                    view=view
-                )
-                bad_req = 0
-            except errors.NotFound:
-                player.message = None
-                return
-            except errors.HTTPException:
-                if bad_req >= 5:
-                    await respawn_player_body(player, player.ctx, bot)
-                    return
-                bad_req += 1
+                embed = player_embed(player)
+                v_cmp = view.to_components()
+                e_cmp = embed.to_dict()
+                if prev != [v_cmp, e_cmp]:
+                    await player.message.edit(
+                        embed=embed,
+                        view=view
+                    )
+                    prev = [v_cmp, e_cmp]
             except Exception:
+                await respawn_player_body(player, player.ctx, bot)
                 return
             await asyncio.sleep(1)
     finally:
         log.info('music_player message auto update stopped')
 
 
-def serialize_music(player: ExtPlayer):
+class SerializeType(Enum):
+    NORMAL = 0
+    HISTORY = 1
+
+
+def serialize_music(player: ExtPlayer, serialize_type: SerializeType = SerializeType.NORMAL):
     if not exists('secret.key'):
         key = Fernet.generate_key()
         with open("secret.key", "wb") as key_file:
             key_file.write(key)
     key = open("secret.key", "rb").read()
-    dump = pickle.dumps({'queue': player.queue, 'history': player.history, 'track': player.current})
+    if serialize_type == serialize_type.NORMAL:
+        dump = pickle.dumps({'queue': player.queue, 'history': player.history, 'track': player.current})
+    elif serialize_type == serialize_type.HISTORY:
+        dump = pickle.dumps({'queue': [item['track'] for item in player.history], 'history': deque()})
+    else:
+        return None
     f = Fernet(key)
     encrypted = f.encrypt(dump)
     return encrypted
@@ -789,7 +799,8 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
             raise Exception
 
         embed = Embed(color=Colour.green())
-        embed.set_author(name=interaction.user.nick, icon_url=interaction.user.avatar.url)
+        name = interaction.user.nick if interaction.user.nick else interaction.user.name
+        embed.set_author(name=name, icon_url=interaction.user.avatar.url)
 
         if search_result.load_type == LoadType.EMPTY:
             await interaction.send(embed=Embed(title="Nothing found :(", color=Colour.dark_red()), delete_after=10.0)
@@ -844,7 +855,7 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
         try:
             player: ExtPlayer = self.bot.lavalink.player_manager.get(ctx.guild.id)
             data = io.BytesIO(serialize_music(player))
-            embed = Embed(description='Use ***floppy disk*** react on this message to restore the dump\n'
+            embed = Embed(description='Use ***any*** react on this message to restore the dump\n'
                                       '**This action will overwrite all current music state**\n '
                                       'If nothing is playing now, you should be in the voice channel',
                           color=Colour.blurple())
@@ -879,7 +890,10 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
                     raise Exception('No voice chat')
             player.queue = obj['queue']
             player.history = obj['history']
-            await player.play(obj['track'])
+            if 'track' in obj:
+                await player.play(obj['track'])
+            else:
+                await player.play()
         except Exception as e:
             return False
         return True
@@ -1072,20 +1086,17 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
     async def on_raw_reaction_add(self, payload):
         server_id = payload.guild_id
         channel = self.bot.get_channel(payload.channel_id)
-        try:
-            message = await channel.fetch_message(payload.message_id)
-        except Exception:
-            return
+        message = await channel.fetch_message(payload.message_id)
 
-        user = self.bot.get_user(payload.user_id)
-        if payload.user_id != self.bot.user.id and len(message.reactions) > 0 and \
-                message.reactions[0].emoji == '💾':
-            await message.remove_reaction(payload.emoji, user)
-            res = await self.load(message, payload.member)
-            if res:
-                await message.add_reaction('👍')
-            else:
-                await message.add_reaction('👎')
+        def has_dump():
+            for attachment in message.attachments:
+                if 'dump' in attachment.filename:
+                    return True
+            return False
+
+        if payload.user_id != self.bot.user.id and has_dump():
+            await self.load(message, payload.member)
+            await message.remove_reaction(payload.emoji, payload.member)
             return
 
         player: ExtPlayer = self.bot.lavalink.player_manager.get(server_id)
