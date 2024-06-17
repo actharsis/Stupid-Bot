@@ -70,9 +70,7 @@ class EmotesCog(commands.Cog, name="Emotes"):
         if message is None:
             await ctx.send('No message provided', delete_after=10.0)
             return
-        name = member.nick
-        if name is None:
-            name = member.name
+        name = member.nick if member.nick else member.global_name
         try:
             webhook = await ctx.channel.create_webhook(name=name)
             self.bot.loop.create_task(ctx.delete())

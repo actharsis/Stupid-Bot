@@ -116,14 +116,15 @@ class CharacterAICog(commands.Cog, name="CharacterAI"):
             message = None
             user = ctx.author.nick if ctx.author.nick else ctx.author.global_name
             async with ctx.channel.typing():
-                async for answer, cai_name, cai_avatar, final in chat.send_message(text):
-                    if CAI_NO_MESSAGE_EDIT and not final:
-                        continue
-                    answer = re.sub(self.cai.user, user, answer, flags=re.IGNORECASE)
-                    if message is None:
-                        message = await webhook.send(answer, username=cai_name, avatar_url=cai_avatar, wait=True)
-                    else:
-                        await message.edit(content=answer)
+                chunks = [chunk async for chunk in chat.send_message(text)]
+            for answer, cai_name, cai_avatar, final in chunks:
+                if CAI_NO_MESSAGE_EDIT and not final:
+                    continue
+                answer = re.sub(self.cai.user, user, answer, flags=re.IGNORECASE)
+                if message is None:
+                    message = await webhook.send(answer, username=cai_name, avatar_url=cai_avatar, wait=True)
+                elif message.content != answer:
+                    await message.edit(content=answer)
 
     # @slash_command(name='relog')
     # async def relog(self, ctx):
