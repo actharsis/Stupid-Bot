@@ -97,8 +97,6 @@ class CharacterAICog(commands.Cog, name="CharacterAI"):
                 ctx.reference.resolved.author.bot and \
                 ctx.reference.resolved.author.name == self.chats[server_id].character_data['name'] and \
                 ctx.reference.resolved.author.discriminator == '0000':
-            await ctx.channel.trigger_typing()
-
             chat, webhook = await self.get_chat_and_webhook(ctx)
 
             text = ctx.clean_content
@@ -116,18 +114,16 @@ class CharacterAICog(commands.Cog, name="CharacterAI"):
                 text = cai_name
 
             message = None
-            user = ctx.author.nick if ctx.author.nick else ctx.author.name
-
-            async for answer, cai_name, cai_avatar, final in chat.send_message(text):
-                if CAI_NO_MESSAGE_EDIT and not final:
-                    continue
-                answer = re.sub(self.cai.user, user, answer, flags=re.IGNORECASE)
-                if message is None:
-                    message = await webhook.send(answer, username=cai_name, avatar_url=cai_avatar, wait=True)
-                else:
-                    await message.edit(content=answer)
-                # if not final:
-                #     await ctx.channel.trigger_typing()
+            user = ctx.author.nick if ctx.author.nick else ctx.author.global_name
+            async with ctx.channel.typing():
+                async for answer, cai_name, cai_avatar, final in chat.send_message(text):
+                    if CAI_NO_MESSAGE_EDIT and not final:
+                        continue
+                    answer = re.sub(self.cai.user, user, answer, flags=re.IGNORECASE)
+                    if message is None:
+                        message = await webhook.send(answer, username=cai_name, avatar_url=cai_avatar, wait=True)
+                    else:
+                        await message.edit(content=answer)
 
     # @slash_command(name='relog')
     # async def relog(self, ctx):

@@ -170,8 +170,7 @@ class CharacterAI:
 
 async def data_stream_parse(download):
     data = b''
-    async for chunk in download.follow_stream():
-        chunk = base64.b64decode(chunk)
+    async for chunk in download.read_stream():
         data += chunk
     for res in data.split(b'\n'):
         if len(res) > 0:

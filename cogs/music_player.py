@@ -88,7 +88,7 @@ class ExtPlayer(lavalink.DefaultPlayer):
             embed = build_history_embed(self, "Songs played during the session:")
             if HISTORY_DUMP:
                 data = io.BytesIO(serialize_music(self, SerializeType.HISTORY))
-            await self.ctx.send(embed=embed, file=File(data, "dump") if HISTORY_DUMP else None)
+            await self.ctx.send(embed=embed, file=File(data, "history_dump") if HISTORY_DUMP else None)
         with contextlib.suppress(Exception):
             guild = self.bot.get_guild(self.guild_id)
             await guild.voice_client.disconnect(force=True)
@@ -241,7 +241,7 @@ def player_embed(player: ExtPlayer):
         embed = Embed(description=f"[**{track.title}**]({track.uri})\n"
                                   f"**Length**: *{time_to_str(track.duration)}*; **Volume**: *{int(player.volume)}*\n"
                                   f"**Timeline**: *{short_time(player.position)}/{short_time(track.duration)}*\n"
-                                  f"```{render_bar(34, player.position, track.duration)}```"
+                                  f"```{render_bar(30, player.position, track.duration)}```"
                                   f"{', '.join(options)}",
                       color=Colour.blurple())
         if player.paused:
@@ -258,7 +258,7 @@ def player_embed(player: ExtPlayer):
         embed = Embed(description=f"**Nothing**\n"
                                   f"**Length**: *{time_to_str(0)}*; **Volume**: *{int(player.volume)}*\n"
                                   f"**Timeline**: *{short_time(0)}/{short_time(0)}*\n"
-                                  f"```{render_bar(34, 1, 1)}```"
+                                  f"```{render_bar(30, 1, 1)}```"
                                   f"{','.join(options)}",
                       color=Colour.blurple())
         embed.set_author(name='Stopped.',
@@ -302,6 +302,7 @@ async def respawn_player_body(player, ctx, bot):
 async def message_auto_update(player, bot):
     try:
         idx = player.message.id
+        bad_req = 0
         prev = None
         while player.message is not None and idx == player.message.id:
             try:
@@ -314,9 +315,13 @@ async def message_auto_update(player, bot):
                         embed=embed,
                         view=view
                     )
-                    prev = [v_cmp, e_cmp]
+                bad_req = 0
+            except errors.HTTPException:
+                if bad_req >= 5:
+                    await respawn_player_body(player, player.ctx, bot)
+                    return
+                bad_req += 1
             except Exception:
-                await respawn_player_body(player, player.ctx, bot)
                 return
             await asyncio.sleep(1)
     finally:
@@ -799,7 +804,7 @@ class MusicPlayerCog(commands.Cog, name="Music player"):
             raise Exception
 
         embed = Embed(color=Colour.green())
-        name = interaction.user.nick if interaction.user.nick else interaction.user.name
+        name = interaction.user.nick if interaction.user.nick else interaction.user.global_name
         embed.set_author(name=name, icon_url=interaction.user.avatar.url)
 
         if search_result.load_type == LoadType.EMPTY:
