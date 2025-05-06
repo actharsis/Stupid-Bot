@@ -1,6 +1,5 @@
-nextcord>=2.6.0
+nextcord>=3.1.0
 emoji>=2.10.1
-aiohttp>=3.8.5
 requests>=2.23.0
 pillow>=10.2.0
 cryptography>=42.0.5
@@ -9,3 +8,8 @@ yarl>=1.9.4
 numpy>=1.26.4
 playwright>=1.41.2
 lavalink>=5.4.0
+# saucenao-api==2.4.0
+playwright==1.52.0
+playwright-stealth==1.0.6
+pixivpy-async==1.1.7
+youtube-transcript-api==1.0.3
