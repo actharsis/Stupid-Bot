@@ -11,5 +11,5 @@ lavalink>=5.4.0
 # saucenao-api==2.4.0
 playwright==1.52.0
 playwright-stealth==1.0.6
-pixivpy-async==1.1.7
+pixivpy-async==1.2.14
 youtube-transcript-api==1.0.3
